@@ -1,0 +1,351 @@
+"""
+LLM (Claude/GPT) based multimodal PDF/Image text extractor
+"""
+
+import base64
+from typing import Dict, List, Any, Optional
+from pathlib import Path
+import json
+
+try:
+    from anthropic import Anthropic
+    ANTHROPIC_AVAILABLE = True
+except ImportError:
+    ANTHROPIC_AVAILABLE = False
+    Anthropic = None
+
+try:
+    from openai import OpenAI
+    OPENAI_AVAILABLE = True
+except ImportError:
+    OPENAI_AVAILABLE = False
+    OpenAI = None
+
+from utils.logger import logger, log_extraction_result
+from utils.config import get_config
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from prompts import (
+    PDF_EXTRACTION_PROMPT, 
+    IMAGE_EXTRACTION_PROMPT,
+    SINGLE_PAGE_PDF_PROMPT,
+    SINGLE_PAGE_IMAGE_PROMPT
+)
+
+
+class LLMExtractor:
+    """Extract text and structure using LLM multimodal capabilities"""
+    
+    def __init__(self):
+        """Initialize LLM extractor with client based on configuration"""
+        self.name: str = "LLM"
+        self.config = get_config()
+        
+        # Initialize LLM client based on configuration
+        # API keys are already validated during Config creation
+        if self.config.llm.provider == "anthropic" and ANTHROPIC_AVAILABLE:
+            self.client = Anthropic(api_key=self.config.llm.anthropic_api_key)
+            logger.info(f"✅ Claude client initialized with model: {self.config.llm.claude_model}")
+        elif self.config.llm.provider == "openai" and OPENAI_AVAILABLE:
+            self.client = OpenAI(api_key=self.config.llm.openai_api_key)
+            logger.info(f"✅ OpenAI client initialized with model: {self.config.llm.openai_model}")
+        else:
+            raise ValueError(f"LLM provider {self.config.llm.provider} not available or not installed")
+    
+    
+    
+    
+    def _call_llm_pdf(self, pdf_base64: str, prompt: str) -> Dict[str, Any]:
+        """Call LLM API for PDF analysis - Always use Claude for PDF multimodal"""
+        # OpenAI doesn't support direct PDF processing, so always use Claude for PDFs
+        if ANTHROPIC_AVAILABLE and self.config.llm.anthropic_api_key:
+            # Re-initialize client if needed for PDF processing
+            if not isinstance(self.client, Anthropic):
+                self.client = Anthropic(api_key=self.config.llm.anthropic_api_key)
+                logger.info("Using Claude for PDF multimodal processing (OpenAI doesn't support direct PDF)")
+            
+            result = self._call_claude_pdf(pdf_base64, prompt)
+            return result
+        else:
+            logger.error("PDF multimodal requires Claude API. OpenAI doesn't support direct PDF processing.")
+            return {'text': '', 'error': 'PDF multimodal requires Claude API (Anthropic)'}
+    
+    def _call_llm_image(self, img_base64: str, prompt: str) -> Dict[str, Any]:
+        """Call LLM API for image analysis"""
+        if self.config.llm.provider == "anthropic":
+            return self._call_claude_image(img_base64, prompt)
+        else:
+            return self._call_openai_image(img_base64, prompt)
+    
+    def _call_claude_pdf(self, pdf_base64: str, prompt: str) -> Dict[str, Any]:
+        """Call Claude API for PDF analysis"""
+        try:
+            message = self.client.messages.create(
+                model=self.config.llm.claude_model,
+                max_tokens=self.config.llm.max_tokens,
+                temperature=self.config.llm.temperature,
+                messages=[{
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "document",
+                            "source": {
+                                "type": "base64",
+                                "media_type": "application/pdf",
+                                "data": pdf_base64
+                            }
+                        },
+                        {
+                            "type": "text",
+                            "text": prompt
+                        }
+                    ]
+                }]
+            )
+            
+            # Parse response - for PDF, we expect plain text
+            response_text = message.content[0].text if message.content else ""
+            # For PDF extraction, treat as plain text directly
+            return {
+                'text': response_text,
+                'structure': {},
+                'extraction_mode': 'full_text',
+                'llm_model': self.config.llm.claude_model,
+                'llm_provider': 'Claude (Anthropic)'
+            }
+            
+        except Exception as e:
+            logger.error(f"Claude PDF API call failed: {e}")
+            return {'text': '', 'error': str(e)}
+    
+    def _call_claude_image(self, img_base64: str, prompt: str) -> Dict[str, Any]:
+        """Call Claude API for image analysis"""
+        try:
+            message = self.client.messages.create(
+                model=self.config.llm.claude_model,
+                max_tokens=self.config.llm.max_tokens,
+                temperature=self.config.llm.temperature,
+                messages=[{
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": "image/png",
+                                "data": img_base64
+                            }
+                        },
+                        {
+                            "type": "text",
+                            "text": prompt
+                        }
+                    ]
+                }]
+            )
+            
+            # Parse response
+            response_text = message.content[0].text if message.content else ""
+            result = self._parse_llm_response(response_text)
+            result['llm_model'] = self.config.llm.claude_model
+            result['llm_provider'] = 'Claude (Anthropic)'
+            return result
+            
+        except Exception as e:
+            logger.error(f"Claude Image API call failed: {e}")
+            return {'text': '', 'error': str(e)}
+    
+    
+    def _call_openai_image(self, img_base64: str, prompt: str) -> Dict[str, Any]:
+        """Call OpenAI API for image analysis"""
+        try:
+            # Check if client is actually Anthropic (misconfigured)
+            if isinstance(self.client, Anthropic):
+                # Fallback to Anthropic call
+                return self._call_claude_image(img_base64, prompt)
+            
+            # Build parameters
+            completion_params = {
+                "model": self.config.llm.openai_model,
+                "messages": [{
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": prompt
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/png;base64,{img_base64}"
+                            }
+                        }
+                    ]
+                }]
+            }
+            
+            # GPT-5 has different parameter requirements
+            if "gpt-5" in self.config.llm.openai_model.lower():
+                completion_params["max_completion_tokens"] = self.config.llm.max_tokens
+                # GPT-5 only supports temperature=1
+            else:
+                completion_params["max_tokens"] = self.config.llm.max_tokens
+                completion_params["temperature"] = self.config.llm.temperature
+            
+            response = self.client.chat.completions.create(**completion_params)
+            
+            # Parse response
+            response_text = response.choices[0].message.content if response.choices else ""
+            result = self._parse_llm_response(response_text)
+            result['llm_model'] = self.config.llm.openai_model
+            result['llm_provider'] = 'OpenAI'
+            return result
+            
+        except Exception as e:
+            logger.error(f"OpenAI Image API call failed: {e}")
+            return {'text': '', 'error': str(e)}
+    
+    def _parse_llm_response(self, response_text: str) -> Dict[str, Any]:
+        """Parse LLM response to extract structured data"""
+        try:
+            # Try to parse as JSON
+            if response_text.strip().startswith('{'):
+                return json.loads(response_text)
+            else:
+                # Fallback to simple text extraction
+                return {
+                    'text': response_text,
+                    'structure': {}
+                }
+        except json.JSONDecodeError:
+            # If JSON parsing fails, return as plain text
+            return {
+                'text': response_text,
+                'structure': {}
+            }
+    
+    def extract_single_page_pdf(self, pdf_bytes: bytes, page_number: int, total_pages: int) -> Dict[str, Any]:
+        """
+        Extract text from a single PDF page using LLM
+        
+        Args:
+            pdf_bytes: PDF bytes containing single page
+            page_number: Current page number
+            total_pages: Total number of pages
+            
+        Returns:
+            Dictionary containing extracted text for single page
+        """
+        if not self.client:
+            error_msg = "LLM client not initialized - API key missing or invalid"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+        
+        try:
+            # Encode PDF to base64
+            pdf_base64 = base64.b64encode(pdf_bytes).decode('utf-8')
+            
+            # Prepare page-specific prompt
+            prompt = SINGLE_PAGE_PDF_PROMPT.format(
+                page_number=page_number,
+                total_pages=total_pages
+            )
+            
+            # Call LLM for single page
+            result = self._call_llm_pdf(pdf_base64, prompt)
+            result['page_number'] = page_number
+            
+            logger.debug(f"LLM PDF extracted {len(result.get('text', ''))} chars from page {page_number}")
+            return result
+            
+        except Exception as e:
+            logger.error(f"LLM single page PDF extraction failed for page {page_number}: {e}")
+            return {'text': '', 'error': str(e), 'page_number': page_number}
+    
+    def extract_single_page_image(self, image_bytes: bytes, page_number: int, total_pages: int) -> Dict[str, Any]:
+        """
+        Extract text from a single page image using LLM
+        
+        Args:
+            image_bytes: Image bytes for single page
+            page_number: Current page number
+            total_pages: Total number of pages
+            
+        Returns:
+            Dictionary containing extracted text for single page
+        """
+        if not self.client:
+            error_msg = "LLM client not initialized - API key missing or invalid"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+        
+        try:
+            # Encode image to base64
+            img_base64 = base64.b64encode(image_bytes).decode('utf-8')
+            
+            # Prepare page-specific prompt
+            prompt = SINGLE_PAGE_IMAGE_PROMPT.format(
+                page_number=page_number,
+                total_pages=total_pages
+            )
+            
+            # Call LLM for single image
+            result = self._call_llm_image(img_base64, prompt)
+            result['page_number'] = page_number
+            
+            logger.debug(f"LLM Image extracted {len(result.get('text', ''))} chars from page {page_number}")
+            return result
+            
+        except Exception as e:
+            logger.error(f"LLM single page image extraction failed for page {page_number}: {e}")
+            return {'text': '', 'error': str(e), 'page_number': page_number}
+    
+    def extract_from_images(self, images: List[bytes]) -> Dict[str, Any]:
+        """
+        Legacy method: Extract text from multiple images using LLM
+        
+        Args:
+            images: List of image bytes
+            
+        Returns:
+            Dictionary containing extracted text from all images
+        """
+        if not self.client:
+            error_msg = "LLM client not initialized - API key missing or invalid"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+        
+        if not images:
+            return {'text': '', 'error': 'No images provided'}
+        
+        try:
+            # For legacy compatibility, process first image with generic prompt
+            # This is used by single_page_pipeline for individual page processing
+            if len(images) == 1:
+                # Single image - treat as page 1 of 1 for consistency
+                return self.extract_single_page_image(images[0], page_number=1, total_pages=1)
+            
+            # Multiple images - process all and combine results
+            all_text = []
+            combined_results = {
+                'text': '',
+                'structure': {},
+                'extraction_mode': 'multipage_images',
+                'page_count': len(images)
+            }
+            
+            for i, image_bytes in enumerate(images, 1):
+                page_result = self.extract_single_page_image(image_bytes, page_number=i, total_pages=len(images))
+                if page_result.get('text'):
+                    all_text.append(f"=== Page {i} ===\n{page_result['text']}")
+            
+            combined_results['text'] = '\n\n'.join(all_text)
+            combined_results['total_chars'] = len(combined_results['text'])
+            
+            logger.debug(f"LLM Images extracted {combined_results['total_chars']} chars from {len(images)} images")
+            return combined_results
+            
+        except Exception as e:
+            logger.error(f"LLM images extraction failed: {e}")
+            return {'text': '', 'error': str(e)}
