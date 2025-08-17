@@ -11,15 +11,6 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-class ExtractorWeights(BaseModel):
-    """Weights for different extractors in the final decision"""
-    pymupdf: float = Field(default=0.20, ge=0, le=1)
-    pdfplumber: float = Field(default=0.25, ge=0, le=1)
-    tesseract: float = Field(default=0.20, ge=0, le=1)
-    llm_img: float = Field(default=0.15, ge=0, le=1)
-    llm_pdf: float = Field(default=0.20, ge=0, le=1)
-
-
 class LLMConfig(BaseModel):
     """LLM provider configuration"""
     provider: str = Field(default="anthropic", pattern="^(anthropic|openai)$")
@@ -46,7 +37,6 @@ class ProcessingConfig(BaseModel):
 
 class Config(BaseModel):
     """Main pipeline configuration"""
-    extractor_weights: ExtractorWeights = Field(default_factory=ExtractorWeights)
     llm: LLMConfig = Field(default_factory=LLMConfig)
     image_dpi: int = Field(default=600, ge=150, le=900)
     output_dir: str = Field(default="output")
