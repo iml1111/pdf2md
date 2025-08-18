@@ -283,17 +283,9 @@ def main():
         help='LLM provider to use '
     )
     
-    parser.add_argument(
-        '--log-level',
-        type=str,
-        choices=['DEBUG', 'INFO', 'WARNING', 'ERROR'],
-        default='INFO',
-        help='Logging level (default: INFO)'
-    )
-    
     args = parser.parse_args()
     
-    setup_logger(level=args.log_level)
+    setup_logger(level="INFO")
     config = get_config()
     
     config.llm.provider = args.llm  
