@@ -311,25 +311,6 @@ black .
 black --check .
 ```
 
-## 🐛 Troubleshooting
-
-### Common Issues
-
-#### API Key Not Found
-```
-❌ ANTHROPIC_API_KEY is required but not found.
-```
-**Solution**: Ensure your `.env` file contains valid API keys.
-
-#### Tesseract Not Found
-```
-TesseractNotFoundError: tesseract is not installed or it's not in your PATH
-```
-**Solution**: Install Tesseract OCR for your operating system (see Installation section).
-
-#### Memory Issues with Large PDFs
-**Solution**: The pipeline processes pages in batches. For very large PDFs, you can modify the batch size in `main.py`.
-
 ## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
