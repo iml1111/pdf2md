@@ -17,12 +17,12 @@ from utils.logger import logger
 class ImageConverter:
     """Convert PDF pages to high-quality images for OCR and LLM processing"""
     
-    def __init__(self, dpi: int = 600):
+    def __init__(self, dpi: int = 300):
         """
         Initialize image converter
         
         Args:
-            dpi: Resolution for image conversion (default: 600)
+            dpi: Resolution for image conversion (default: 300)
         """
         self.dpi = dpi
         

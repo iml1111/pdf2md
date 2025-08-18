@@ -38,7 +38,7 @@ class ProcessingConfig(BaseModel):
 class Config(BaseModel):
     """Main pipeline configuration"""
     llm: LLMConfig = Field(default_factory=LLMConfig)
-    image_dpi: int = Field(default=600, ge=150, le=900)
+    image_dpi: int = Field(default=300, ge=150, le=900)
     output_dir: str = Field(default="output")
     
 

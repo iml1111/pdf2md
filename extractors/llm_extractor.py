@@ -6,6 +6,8 @@ import base64
 from typing import Dict, List, Any, Optional
 from pathlib import Path
 import json
+import io
+from PIL import Image
 
 from anthropic import Anthropic
 from openai import OpenAI
@@ -36,6 +38,45 @@ class LLMExtractor:
         self.openai_client = OpenAI(api_key=self.config.llm.openai_api_key)
         logger.info(f"✅ Both LLM clients initialized - Claude: {self.config.llm.claude_model}, OpenAI: {self.config.llm.openai_model}")
     
+    def _resize_image_if_needed(self, image_bytes: bytes, max_dimension: int = 7999) -> bytes:
+        """
+        Resize image if it exceeds the maximum dimension (default 7999px for Claude API)
+        
+        Args:
+            image_bytes: Original image bytes
+            max_dimension: Maximum allowed dimension (default 7999)
+            
+        Returns:
+            Resized image bytes if needed, otherwise original bytes
+        """
+        try:
+            # Open image from bytes
+            img = Image.open(io.BytesIO(image_bytes))
+            width, height = img.size
+            
+            # Check if resizing is needed
+            if max(width, height) > max_dimension:
+                # Calculate scale factor to fit within max_dimension
+                scale = max_dimension / max(width, height)
+                new_width = int(width * scale)
+                new_height = int(height * scale)
+                
+                logger.info(f"📐 Resizing image from {width}x{height} to {new_width}x{new_height} (Claude API limit)")
+                
+                # Resize image with high quality resampling
+                img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+                
+                # Convert back to bytes
+                output = io.BytesIO()
+                # Save as PNG to maintain quality
+                img.save(output, format='PNG', optimize=True)
+                return output.getvalue()
+            
+            return image_bytes
+            
+        except Exception as e:
+            logger.warning(f"Failed to resize image: {e}. Using original image.")
+            return image_bytes
     
     def _call_llm_image(self, img_base64: str, prompt: str) -> Dict[str, Any]:
         """Call LLM API for image analysis"""
@@ -231,8 +272,11 @@ class LLMExtractor:
             Dictionary containing extracted text for single page
         """
         try:
+            # Resize image if needed to comply with API limits
+            resized_image_bytes = self._resize_image_if_needed(image_bytes)
+            
             # Encode image to base64
-            img_base64 = base64.b64encode(image_bytes).decode('utf-8')
+            img_base64 = base64.b64encode(resized_image_bytes).decode('utf-8')
             
             # Prepare page-specific prompt
             prompt = SINGLE_PAGE_IMAGE_PROMPT.format(
@@ -280,6 +324,7 @@ class LLMExtractor:
             }
             
             for i, image_bytes in enumerate(images, 1):
+                # extract_single_page_image already handles resizing internally
                 page_result = self.extract_single_page_image(image_bytes, page_number=i, total_pages=len(images))
                 if page_result.get('text'):
                     all_text.append(f"=== Page {i} ===\n{page_result['text']}")

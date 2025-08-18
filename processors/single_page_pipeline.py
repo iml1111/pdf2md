@@ -97,7 +97,10 @@ class SinglePagePipeline:
                 elif self._validate_result(result):
                     extraction_results[name] = result
                 else:
-                    logger.warning(f"⚠️ Page {self.page_number} - {name}: Invalid result format {result}")
+                    result_str = str(result)
+                    if len(result_str) > 1000:
+                        result_str = result_str[:1000] + '... [truncated]'
+                    logger.warning(f"⚠️ Page {self.page_number} - {name}: Invalid result format {result_str}")
             
             # Step 3: Merge text using LLM
             logger.debug(f"Merging text for page {self.page_number} using LLM")

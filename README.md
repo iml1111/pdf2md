@@ -188,7 +188,7 @@ Create a `config.json` for custom settings:
     "max_tokens": 16384,
     "temperature": 0.1
   },
-  "image_dpi": 600
+  "image_dpi": 300
 }
 ```
 
@@ -217,7 +217,7 @@ python main.py --in input.pdf
 python main.py --in input.pdf --out output.md
 
 # High-resolution image processing
-python main.py --in input.pdf --dpi 600
+python main.py --in input.pdf --dpi 300
 
 # Use specific LLM provider
 python main.py --in input.pdf --llm openai
