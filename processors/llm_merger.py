@@ -5,19 +5,8 @@ LLM-based text merger for combining extraction results
 from typing import Dict, List, Any, Optional
 import json
 
-try:
-    from anthropic import Anthropic
-    ANTHROPIC_AVAILABLE = True
-except ImportError:
-    ANTHROPIC_AVAILABLE = False
-    Anthropic = None
-
-try:
-    from openai import OpenAI
-    OPENAI_AVAILABLE = True
-except ImportError:
-    OPENAI_AVAILABLE = False
-    OpenAI = None
+from anthropic import Anthropic
+from openai import OpenAI
 
 from utils.config import get_config, Config
 from utils.logger import logger
@@ -34,20 +23,18 @@ class LLMMerger:
         self.config: Config = get_config()
         self.rate_limiters: APIRateLimiters = APIRateLimiters()
         
-        # Initialize LLM client based on configuration
-        # API keys are already validated during Config creation
-        if self.config.llm.provider == "anthropic" and ANTHROPIC_AVAILABLE:
-            self.client = Anthropic(api_key=self.config.llm.anthropic_api_key)
+        # Initialize both LLM clients for flexibility
+        self.anthropic_client = Anthropic(api_key=self.config.llm.anthropic_api_key)
+        self.openai_client = OpenAI(api_key=self.config.llm.openai_api_key)
+        
+        # Set provider preference from config
+        self.provider: str = self.config.llm.provider
+        if self.provider == "anthropic":
             self.model: str = self.config.llm.claude_model
-            self.provider: str = "anthropic"
-            logger.info(f"LLM Merger using Claude: {self.model}")
-        elif self.config.llm.provider == "openai" and OPENAI_AVAILABLE:
-            self.client = OpenAI(api_key=self.config.llm.openai_api_key)
-            self.model: str = self.config.llm.openai_model
-            self.provider: str = "openai"
-            logger.info(f"LLM Merger using OpenAI: {self.model}")
+            logger.info(f"LLM Merger preferring Claude: {self.model}")
         else:
-            raise ValueError(f"LLM provider {self.config.llm.provider} not available")
+            self.model: str = self.config.llm.openai_model
+            logger.info(f"LLM Merger preferring OpenAI: {self.model}")
     
     async def merge_text(self, extraction_results: Dict[str, Dict[str, Any]]) -> str:
         """
@@ -156,7 +143,7 @@ class LLMMerger:
             if self.provider == "anthropic":
                 # Use asyncio.to_thread for sync API call
                 response = await asyncio.to_thread(
-                    self.client.messages.create,
+                    self.anthropic_client.messages.create,
                     model=self.model,
                     max_tokens=8192,
                     temperature=0.1,
@@ -165,11 +152,19 @@ class LLMMerger:
                 return response.content[0].text
                 
             elif self.provider == "openai":
+                # Build parameters for OpenAI
+                completion_params = {
+                    "model": self.model,
+                    "messages": [{"role": "user", "content": prompt}]
+                }
+                
+                # GPT-5 only supports temperature=1, so don't set it for GPT-5
+                if "gpt-5" not in self.model.lower():
+                    completion_params["temperature"] = 0.1
+                
                 response = await asyncio.to_thread(
-                    self.client.chat.completions.create,
-                    model=self.model,
-                    temperature=0.1,
-                    messages=[{"role": "user", "content": prompt}]
+                    self.openai_client.chat.completions.create,
+                    **completion_params
                 )
                 return response.choices[0].message.content
                 

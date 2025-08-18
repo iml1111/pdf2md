@@ -5,19 +5,8 @@ Final Orchestrator for generating complete markdown document from all pages
 from typing import Dict, Any, List, Optional
 import re
 
-try:
-    from anthropic import Anthropic
-    ANTHROPIC_AVAILABLE = True
-except ImportError:
-    ANTHROPIC_AVAILABLE = False
-    Anthropic = None
-
-try:
-    from openai import OpenAI
-    OPENAI_AVAILABLE = True
-except ImportError:
-    OPENAI_AVAILABLE = False
-    OpenAI = None
+from anthropic import Anthropic
+from openai import OpenAI
 
 from utils.config import get_config, Config
 from utils.logger import logger
@@ -34,16 +23,15 @@ class FinalOrchestrator:
         """Initialize final orchestrator with LLM client"""
         self.config = config or get_config()
         
-        # Initialize LLM client based on configuration
-        # API keys are already validated during Config creation
-        if self.config.llm.provider == "anthropic" and ANTHROPIC_AVAILABLE:
-            self.client = Anthropic(api_key=self.config.llm.anthropic_api_key)
-            logger.info(f"✅ Final orchestrator initialized with Claude: {self.config.llm.claude_model}")
-        elif self.config.llm.provider == "openai" and OPENAI_AVAILABLE:
-            self.client = OpenAI(api_key=self.config.llm.openai_api_key)
-            logger.info(f"✅ Final orchestrator initialized with OpenAI: {self.config.llm.openai_model}")
+        # Initialize both LLM clients for flexibility
+        self.anthropic_client = Anthropic(api_key=self.config.llm.anthropic_api_key)
+        self.openai_client = OpenAI(api_key=self.config.llm.openai_api_key)
+        
+        # Log provider preference
+        if self.config.llm.provider == "anthropic":
+            logger.info(f"✅ Final orchestrator preferring Claude: {self.config.llm.claude_model}")
         else:
-            raise ValueError(f"LLM provider {self.config.llm.provider} not available")
+            logger.info(f"✅ Final orchestrator preferring OpenAI: {self.config.llm.openai_model}")
     
     def generate_final_document(self, page_results: List[Dict[str, Any]], pdf_path: str) -> str:
         """
@@ -56,11 +44,6 @@ class FinalOrchestrator:
         Returns:
             Final markdown document with proper formatting
         """
-        if not self.client:
-            error_msg = "LLM client not initialized - API key missing or invalid"
-            logger.error(error_msg)
-            raise ValueError(error_msg)
-        
         if not page_results:
             logger.warning("No page results to process")
             return "# Empty Document\n\nNo content was extracted from the PDF."
@@ -191,7 +174,7 @@ class FinalOrchestrator:
             if max_tokens is None:
                 max_tokens = self.config.llm.max_tokens
                 
-            message = self.client.messages.create(
+            message = self.anthropic_client.messages.create(
                 model=self.config.llm.claude_model,
                 max_tokens=max_tokens,
                 temperature=0.3,  # Slightly higher for better formatting
@@ -211,11 +194,6 @@ class FinalOrchestrator:
     def _call_openai(self, prompt: str, max_tokens: int = None) -> str:
         """Call OpenAI API for final generation"""
         try:
-            # Check if client is actually Anthropic (misconfigured)
-            if isinstance(self.client, Anthropic):
-                # Fallback to Anthropic call
-                return self._call_claude(prompt, max_tokens)
-            
             if max_tokens is None:
                 max_tokens = self.config.llm.max_tokens
                 
@@ -227,17 +205,18 @@ class FinalOrchestrator:
                 }, {
                     "role": "user",
                     "content": prompt
-                }],
-                "temperature": 0.3  # Slightly higher for better formatting
+                }]
             }
             
             # Handle different OpenAI model parameters
             if "gpt-5" in self.config.llm.openai_model.lower():
                 completion_params["max_completion_tokens"] = max_tokens
+                # GPT-5 only supports temperature=1, so don't set it
             else:
                 completion_params["max_tokens"] = max_tokens
+                completion_params["temperature"] = 0.3  # Slightly higher for better formatting
             
-            response = self.client.chat.completions.create(**completion_params)
+            response = self.openai_client.chat.completions.create(**completion_params)
             
             return response.choices[0].message.content if response.choices else ""
             

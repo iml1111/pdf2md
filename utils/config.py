@@ -3,7 +3,7 @@ Configuration management for hybrid PDF to Markdown pipeline
 """
 
 import os
-from typing import Dict, Optional
+from typing import Dict
 from pydantic import BaseModel, Field, model_validator
 from dotenv import load_dotenv
 
@@ -14,8 +14,8 @@ load_dotenv()
 class LLMConfig(BaseModel):
     """LLM provider configuration"""
     provider: str = Field(default="anthropic", pattern="^(anthropic|openai)$")
-    anthropic_api_key: Optional[str] = Field(default=None)
-    openai_api_key: Optional[str] = Field(default=None)
+    anthropic_api_key: str = Field(default_factory=lambda: os.environ["ANTHROPIC_API_KEY"])
+    openai_api_key: str = Field(default_factory=lambda: os.environ["OPENAI_API_KEY"])
     claude_model: str = Field(default="claude-sonnet-4-20250514")
     openai_model: str = Field(default="gpt-5-2025-08-07")
     max_tokens: int = Field(default=16384)
@@ -40,34 +40,6 @@ class Config(BaseModel):
     llm: LLMConfig = Field(default_factory=LLMConfig)
     image_dpi: int = Field(default=600, ge=150, le=900)
     output_dir: str = Field(default="output")
-    
-    @model_validator(mode='after')
-    def validate_and_load_api_keys(self):
-        """Load API keys from environment and validate them"""
-        
-        # Load API keys from environment if not provided
-        if not self.llm.anthropic_api_key:
-            self.llm.anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
-        if not self.llm.openai_api_key:
-            self.llm.openai_api_key = os.getenv("OPENAI_API_KEY")
-        
-        # Validate required API keys are present
-        if self.llm.provider == 'anthropic':
-            if not self.llm.anthropic_api_key:
-                raise ValueError(
-                    "❌ ANTHROPIC_API_KEY is required but not found.\n"
-                    "Please set it in .env file or as environment variable:\n"
-                    "export ANTHROPIC_API_KEY='your-api-key-here'"
-                )
-        elif self.llm.provider == 'openai':
-            if not self.llm.openai_api_key:
-                raise ValueError(
-                    "❌ OPENAI_API_KEY is required but not found.\n"
-                    "Please set it in .env file or as environment variable:\n"
-                    "export OPENAI_API_KEY='your-api-key-here'"
-                )
-        
-        return self
     
     @classmethod
     def from_file(cls, path: str):

@@ -279,6 +279,7 @@ def main():
         '--llm',
         type=str,
         choices=['openai', 'anthropic'],
+        default='anthropic',
         help='LLM provider to use '
     )
     
@@ -295,10 +296,7 @@ def main():
     setup_logger(level=args.log_level)
     config = get_config()
     
-    if args.llm == 'anthropic':
-        config.llm.provider = 'anthropic'
-    elif args.llm == 'openai':
-        config.llm.provider = 'openai'
+    config.llm.provider = args.llm  
     logger.info(f"✅ Using {config.llm.provider} as LLM provider")
     
     try:

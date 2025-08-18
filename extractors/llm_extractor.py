@@ -7,19 +7,8 @@ from typing import Dict, List, Any, Optional
 from pathlib import Path
 import json
 
-try:
-    from anthropic import Anthropic
-    ANTHROPIC_AVAILABLE = True
-except ImportError:
-    ANTHROPIC_AVAILABLE = False
-    Anthropic = None
-
-try:
-    from openai import OpenAI
-    OPENAI_AVAILABLE = True
-except ImportError:
-    OPENAI_AVAILABLE = False
-    OpenAI = None
+from anthropic import Anthropic
+from openai import OpenAI
 
 from utils.logger import logger, log_extraction_result
 from utils.config import get_config
@@ -42,34 +31,11 @@ class LLMExtractor:
         self.name: str = "LLM"
         self.config = get_config()
         
-        # Initialize LLM client based on configuration
-        # API keys are already validated during Config creation
-        if self.config.llm.provider == "anthropic" and ANTHROPIC_AVAILABLE:
-            self.client = Anthropic(api_key=self.config.llm.anthropic_api_key)
-            logger.info(f"✅ Claude client initialized with model: {self.config.llm.claude_model}")
-        elif self.config.llm.provider == "openai" and OPENAI_AVAILABLE:
-            self.client = OpenAI(api_key=self.config.llm.openai_api_key)
-            logger.info(f"✅ OpenAI client initialized with model: {self.config.llm.openai_model}")
-        else:
-            raise ValueError(f"LLM provider {self.config.llm.provider} not available or not installed")
+        # Initialize both LLM clients for flexibility
+        self.anthropic_client = Anthropic(api_key=self.config.llm.anthropic_api_key)
+        self.openai_client = OpenAI(api_key=self.config.llm.openai_api_key)
+        logger.info(f"✅ Both LLM clients initialized - Claude: {self.config.llm.claude_model}, OpenAI: {self.config.llm.openai_model}")
     
-    
-    
-    
-    def _call_llm_pdf(self, pdf_base64: str, prompt: str) -> Dict[str, Any]:
-        """Call LLM API for PDF analysis - Always use Claude for PDF multimodal"""
-        # OpenAI doesn't support direct PDF processing, so always use Claude for PDFs
-        if ANTHROPIC_AVAILABLE and self.config.llm.anthropic_api_key:
-            # Re-initialize client if needed for PDF processing
-            if not isinstance(self.client, Anthropic):
-                self.client = Anthropic(api_key=self.config.llm.anthropic_api_key)
-                logger.info("Using Claude for PDF multimodal processing (OpenAI doesn't support direct PDF)")
-            
-            result = self._call_claude_pdf(pdf_base64, prompt)
-            return result
-        else:
-            logger.error("PDF multimodal requires Claude API. OpenAI doesn't support direct PDF processing.")
-            return {'text': '', 'error': 'PDF multimodal requires Claude API (Anthropic)'}
     
     def _call_llm_image(self, img_base64: str, prompt: str) -> Dict[str, Any]:
         """Call LLM API for image analysis"""
@@ -81,7 +47,7 @@ class LLMExtractor:
     def _call_claude_pdf(self, pdf_base64: str, prompt: str) -> Dict[str, Any]:
         """Call Claude API for PDF analysis"""
         try:
-            message = self.client.messages.create(
+            message = self.anthropic_client.messages.create(
                 model=self.config.llm.claude_model,
                 max_tokens=self.config.llm.max_tokens,
                 temperature=self.config.llm.temperature,
@@ -122,7 +88,7 @@ class LLMExtractor:
     def _call_claude_image(self, img_base64: str, prompt: str) -> Dict[str, Any]:
         """Call Claude API for image analysis"""
         try:
-            message = self.client.messages.create(
+            message = self.anthropic_client.messages.create(
                 model=self.config.llm.claude_model,
                 max_tokens=self.config.llm.max_tokens,
                 temperature=self.config.llm.temperature,
@@ -160,11 +126,6 @@ class LLMExtractor:
     def _call_openai_image(self, img_base64: str, prompt: str) -> Dict[str, Any]:
         """Call OpenAI API for image analysis"""
         try:
-            # Check if client is actually Anthropic (misconfigured)
-            if isinstance(self.client, Anthropic):
-                # Fallback to Anthropic call
-                return self._call_claude_image(img_base64, prompt)
-            
             # Build parameters
             completion_params = {
                 "model": self.config.llm.openai_model,
@@ -193,7 +154,7 @@ class LLMExtractor:
                 completion_params["max_tokens"] = self.config.llm.max_tokens
                 completion_params["temperature"] = self.config.llm.temperature
             
-            response = self.client.chat.completions.create(**completion_params)
+            response = self.openai_client.chat.completions.create(**completion_params)
             
             # Parse response
             response_text = response.choices[0].message.content if response.choices else ""
@@ -237,11 +198,6 @@ class LLMExtractor:
         Returns:
             Dictionary containing extracted text for single page
         """
-        if not self.client:
-            error_msg = "LLM client not initialized - API key missing or invalid"
-            logger.error(error_msg)
-            raise ValueError(error_msg)
-        
         try:
             # Encode PDF to base64
             pdf_base64 = base64.b64encode(pdf_bytes).decode('utf-8')
@@ -252,8 +208,8 @@ class LLMExtractor:
                 total_pages=total_pages
             )
             
-            # Call LLM for single page
-            result = self._call_llm_pdf(pdf_base64, prompt)
+            # Call Claude for single page (OpenAI doesn't support direct PDF processing)
+            result = self._call_claude_pdf(pdf_base64, prompt)
             result['page_number'] = page_number
             
             logger.debug(f"LLM PDF extracted {len(result.get('text', ''))} chars from page {page_number}")
@@ -275,11 +231,6 @@ class LLMExtractor:
         Returns:
             Dictionary containing extracted text for single page
         """
-        if not self.client:
-            error_msg = "LLM client not initialized - API key missing or invalid"
-            logger.error(error_msg)
-            raise ValueError(error_msg)
-        
         try:
             # Encode image to base64
             img_base64 = base64.b64encode(image_bytes).decode('utf-8')
@@ -311,11 +262,6 @@ class LLMExtractor:
         Returns:
             Dictionary containing extracted text from all images
         """
-        if not self.client:
-            error_msg = "LLM client not initialized - API key missing or invalid"
-            logger.error(error_msg)
-            raise ValueError(error_msg)
-        
         if not images:
             return {'text': '', 'error': 'No images provided'}
         
