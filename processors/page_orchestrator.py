@@ -55,7 +55,6 @@ class PageOrchestrator:
                 page_number=page_number,
                 total_pages=total_pages,
                 text=context['text'],
-                sources=context['sources']
             )
             
             # Call LLM for page integration

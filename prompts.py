@@ -110,26 +110,59 @@ def get_llm_merge_prompt(extraction_data: str) -> str:
         Complete prompt for merging
     """
     return f"""You are merging text extraction results from multiple PDF extractors.
-Each extractor may have captured different aspects of the content with varying accuracy.
+Each extractor has different strengths and reliability levels based on the PDF type.
 
-Your task is to create a single, comprehensive, and accurate version by:
-1. Combining ALL unique information from all sources (union of all content)
-2. Correcting obvious OCR errors and typos
-3. Resolving conflicts by choosing the most coherent version
-4. Preserving all important details - do not summarize or omit information
-5. Maintaining the original structure and formatting intent
+EXTRACTOR RELIABILITY HIERARCHY:
+1. PyMuPDF & PDFPlumber (HIGHEST PRIORITY):
+   - Most accurate for native PDF text (not scanned)
+   - When these have text, prefer their content over others
+   - Especially trust for: dates, numbers, emails, URLs, proper formatting
+
+2. Tesseract OCR (MEDIUM PRIORITY):
+   - Primary source for scanned PDFs when PyMuPDF/PDFPlumber have no text
+   - May have OCR errors: spaces in words, wrong characters (0/O, 1/l)
+   - Good for: overall content structure, main text body
+   - Needs correction for: OCR artifacts, broken words, spacing issues
+
+3. LLM-based extractors (LOWER PRIORITY):
+   - LLM PDF & LLM Image have similar reliability
+   - May hallucinate or modify content
+   - Use for: filling gaps, understanding context
+   - Be cautious with: specific numbers, dates, contact information
+
+MERGING STRATEGY:
+1. If PyMuPDF or PDFPlumber have text → use as primary source
+2. If they're empty (scanned PDF) → use Tesseract as base, correct OCR errors
+3. Use LLM extractors to fill missing information and verify context
+4. For conflicts in specific data (numbers, emails, dates):
+   - Trust PyMuPDF/PDFPlumber first
+   - Then Tesseract (with OCR correction)
+   - LLM extractors last
+
+COMMON OCR PATTERNS TO FIX:
+- Broken Korean: "개 발 자" → "개발자", "니 에서" → "트에서", "호 Contacts" → "Contacts"
+- Wrong symbols: "호" at line start → remove, "4" in phone → check context
+- Spacing: Remove unnecessary spaces within Korean words
+- Email/URL: Prefer versions without spaces or unusual characters
+
+VALIDATION HINTS:
+- Korean phone: Should match 010-XXXX-XXXX pattern
+- Email: Should have @ and valid domain
+- Dates: Prefer consistent format (YYYY.MM or YYYY-MM)
+- Korean text: Should not have spaces within syllables
 
 EXTRACTION RESULTS:
 {extraction_data}
 
-IMPORTANT INSTRUCTIONS:
-- Include ALL information found in ANY extractor, even if only one source has it
-- Fix obvious errors like "0" vs "O", "1" vs "l", broken words, etc.
-- When extractors disagree, choose the version that makes most sense contextually
-- Preserve tables, lists, and structural elements
-- Do NOT add any information not present in the extractions
-- Do NOT summarize - keep all details
-- Return ONLY the merged text without any commentary
+CRITICAL RULES:
+- When PyMuPDF/PDFPlumber have content, use their structure and formatting
+- Fix Tesseract OCR errors but preserve its unique content
+- Don't trust LLM extractors for exact numbers/dates if other sources exist
+- Include ALL unique information from all sources
+- For contact info (phone, email), prefer the most common/repeated version
+- Maintain original document structure and order
+- Do NOT add information not present in any extraction
+- Return ONLY the merged text without commentary
 
 Merged text:"""
 
@@ -139,7 +172,6 @@ def get_page_integration_prompt(
     page_number: int,
     total_pages: int,
     text: str,
-    sources: list
 ) -> str:
     """
     Create prompt for integrating single page extraction results
@@ -148,13 +180,10 @@ def get_page_integration_prompt(
         page_number: Current page number
         total_pages: Total number of pages
         text: Merged text from extractors
-        sources: List of extractors that contributed
         
     Returns:
         Complete prompt for page integration
     """
-    sources_str = ', '.join(sources) if sources else 'Unknown'
-    
     return f"""You are integrating extraction results from page {page_number} of {total_pages}.
 
 Multiple extractors have processed this page and their results have been merged.
@@ -169,9 +198,9 @@ IMPORTANT INSTRUCTIONS:
 6. Return ONLY the integrated text content
 
 Page content to integrate:
+---
 {text}
-
-Sources that contributed: {sources_str}
+---
 
 Please provide the integrated page content as plain text:"""
 
@@ -214,19 +243,33 @@ Generate the complete markdown document:"""
 
 def format_extraction_data(results: Dict[str, Dict]) -> str:
     """
-    Format extraction results for LLM processing
+    Format extraction results for LLM processing with reliability indicators
     
     Args:
         results: Dictionary mapping extractor name to results
         
     Returns:
-        Formatted string with all extraction results
+        Formatted string with all extraction results and reliability notes
     """
     extraction_texts = []
     
     for name, result in results.items():
         text = result.get('text', '').strip()
         if text:
-            extraction_texts.append(f"=== {name.upper()} EXTRACTION ===\n{text}\n")
+            # Add reliability indicators for each extractor
+            if name == 'pymupdf':
+                header = f"=== PYMUPDF EXTRACTION (Native PDF Reader - HIGH RELIABILITY) ==="
+            elif name == 'pdfplumber':
+                header = f"=== PDFPLUMBER EXTRACTION (Native PDF Reader - HIGH RELIABILITY) ==="
+            elif name == 'tesseract':
+                header = f"=== TESSERACT EXTRACTION (OCR - MEDIUM RELIABILITY, MAY HAVE ERRORS) ==="
+            elif name == 'llm_pdf':
+                header = f"=== LLM_PDF EXTRACTION (AI-based - LOWER RELIABILITY FOR SPECIFICS) ==="
+            elif name == 'llm_img':
+                header = f"=== LLM_IMG EXTRACTION (AI-based - LOWER RELIABILITY FOR SPECIFICS) ==="
+            else:
+                header = f"=== {name.upper()} EXTRACTION ==="
+            
+            extraction_texts.append(f"{header}\n{text}\n")
     
     return "\n".join(extraction_texts)
