@@ -225,7 +225,6 @@ class PDF2MDPipeline:
             'pdf_path': str(pdf_path),
             'output_path': str(output_file),
             'processing_time': processing_time,
-            'pipeline_type': 'page_based',
             'total_pages': len(page_results),
             'successful_pages': successful_pages,
             'page_results': [
