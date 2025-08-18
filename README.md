@@ -202,9 +202,8 @@ python main.py --in document.pdf --config config.json
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `ANTHROPIC_API_KEY` | Claude API key | None (required) |
-| `OPENAI_API_KEY` | OpenAI API key | None (required) |
-| `LOG_LEVEL` | Logging verbosity | INFO |
+| `ANTHROPIC_API_KEY` | Claude API key | required |
+| `OPENAI_API_KEY` | OpenAI API key | required |
 
 ## 📖 Usage
 

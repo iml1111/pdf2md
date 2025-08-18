@@ -44,7 +44,6 @@ class PyMuPDFExtractor:
             
             doc.close()
             
-            logger.debug(f"PyMuPDF extracted {len(page_text)} chars from page {page_number}")
             return page_text
             
         except Exception as e:

@@ -39,7 +39,6 @@ class PDFPlumberExtractor:
                 page = pdf.pages[0]
                 page_text = page.extract_text() or ''
                 
-                logger.debug(f"pdfplumber extracted {len(page_text)} chars from page {page_number}")
                 return page_text
             
         except Exception as e:
@@ -115,15 +114,12 @@ class PDFPlumberExtractor:
                 }
                 
                 # Extract character information (limited for performance)
-                try:
-                    chars = page.chars[:100]  # Limit to first 100 chars
-                    metadata['chars_sample'] = [{
-                        'text': char.get('text', ''),
-                        'fontname': char.get('fontname', ''),
-                        'size': char.get('size', 0)
-                    } for char in chars]
-                except:
-                    pass
+                chars = page.chars[:100]  # Limit to first 100 chars
+                metadata['chars_sample'] = [{
+                    'text': char.get('text', ''),
+                    'fontname': char.get('fontname', ''),
+                    'size': char.get('size', 0)
+                } for char in chars]
                 
                 return metadata
             

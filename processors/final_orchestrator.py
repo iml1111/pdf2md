@@ -171,8 +171,7 @@ class FinalOrchestrator:
     def _call_claude(self, prompt: str, max_tokens: int = None) -> str:
         """Call Claude API for final generation"""
         try:
-            if max_tokens is None:
-                max_tokens = self.config.llm.max_tokens
+            max_tokens = max_tokens or self.config.llm.max_tokens
                 
             message = self.anthropic_client.messages.create(
                 model=self.config.llm.claude_model,
@@ -194,8 +193,7 @@ class FinalOrchestrator:
     def _call_openai(self, prompt: str, max_tokens: int = None) -> str:
         """Call OpenAI API for final generation"""
         try:
-            if max_tokens is None:
-                max_tokens = self.config.llm.max_tokens
+            max_tokens = max_tokens or self.config.llm.max_tokens
                 
             completion_params = {
                 "model": self.config.llm.openai_model,

@@ -59,23 +59,3 @@ class ImageConverter:
             logger.warning(f"Failed to optimize image for OCR: {e}")
             return image_bytes  # Return original on failure
     
-    def _convert_with_pil(self, pixmap, output_format: str) -> bytes:
-        """
-        Convert pixmap to specified format using PIL
-        
-        Args:
-            pixmap: PyMuPDF pixmap object
-            output_format: Target image format
-            
-        Returns:
-            Image bytes in specified format
-        """
-        # Get pixmap as PIL Image
-        img_data = pixmap.tobytes("png")
-        img = Image.open(io.BytesIO(img_data))
-        
-        # Convert to target format
-        buffer = io.BytesIO()
-        img.save(buffer, format=output_format.upper())
-        return buffer.getvalue()
-    

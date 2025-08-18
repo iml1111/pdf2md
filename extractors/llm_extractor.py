@@ -212,7 +212,6 @@ class LLMExtractor:
             result = self._call_claude_pdf(pdf_base64, prompt)
             result['page_number'] = page_number
             
-            logger.debug(f"LLM PDF extracted {len(result.get('text', ''))} chars from page {page_number}")
             return result
             
         except Exception as e:
@@ -245,7 +244,6 @@ class LLMExtractor:
             result = self._call_llm_image(img_base64, prompt)
             result['page_number'] = page_number
             
-            logger.debug(f"LLM Image extracted {len(result.get('text', ''))} chars from page {page_number}")
             return result
             
         except Exception as e:
@@ -289,7 +287,6 @@ class LLMExtractor:
             combined_results['text'] = '\n\n'.join(all_text)
             combined_results['total_chars'] = len(combined_results['text'])
             
-            logger.debug(f"LLM Images extracted {combined_results['total_chars']} chars from {len(images)} images")
             return combined_results
             
         except Exception as e:

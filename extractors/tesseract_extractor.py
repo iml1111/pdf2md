@@ -101,7 +101,6 @@ class TesseractExtractor:
             page_timeout = 300.0  # 페이지당 최대 5분 (300초)
             
             for page_num, img_bytes in enumerate(images):
-                logger.debug(f"📄 Processing page {page_num + 1}/{len(images)} with Tesseract...")
                 
                 try:
                     # 이미지 로드
@@ -149,9 +148,6 @@ class TesseractExtractor:
                                 'avg_confidence': avg_conf / 100.0  # Tesseract는 0-100 범위
                             })
                             
-                            logger.debug(f"✅ Page {page_num + 1}: {len(page_texts)} text blocks extracted")
-                        else:
-                            logger.debug(f"Page {page_num + 1}: No text found")
                     
                     except Exception as ocr_e:
                         # 폴백: 단순 텍스트 추출

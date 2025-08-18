@@ -27,11 +27,6 @@ class PageOrchestrator:
         self.anthropic_client = Anthropic(api_key=self.config.llm.anthropic_api_key)
         self.openai_client = OpenAI(api_key=self.config.llm.openai_api_key)
         
-        # Log provider preference
-        if self.config.llm.provider == "anthropic":
-            logger.debug(f"Page orchestrator preferring Claude: {self.config.llm.claude_model}")
-        else:
-            logger.debug(f"Page orchestrator preferring OpenAI: {self.config.llm.openai_model}")
     
     def integrate_page_results(self, merged_result: Dict[str, Any], page_number: int, total_pages: int) -> Dict[str, Any]:
         """
@@ -80,7 +75,6 @@ class PageOrchestrator:
                 }
             }
             
-            logger.debug(f"Page {page_number} integrated successfully")
             return result
             
         except Exception as e:

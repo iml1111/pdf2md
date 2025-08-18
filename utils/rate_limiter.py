@@ -33,17 +33,10 @@ class RateLimiter:
         Acquire permission to make an API call
         Ensures rate limiting is enforced
         """
-        # Create lock and semaphore lazily with current event loop
+        # Create lock and semaphore lazily
         if self._lock is None:
-            try:
-                # Get current running loop
-                loop = asyncio.get_running_loop()
-                self._lock = asyncio.Lock()
-                self._semaphore = asyncio.Semaphore(self._max_concurrent)
-            except RuntimeError:
-                # If no running loop, create them anyway (will bind to loop when used)
-                self._lock = asyncio.Lock()
-                self._semaphore = asyncio.Semaphore(self._max_concurrent)
+            self._lock = asyncio.Lock()
+            self._semaphore = asyncio.Semaphore(self._max_concurrent)
         
         async with self._semaphore:
             async with self._lock:

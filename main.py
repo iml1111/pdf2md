@@ -215,18 +215,10 @@ class PDF2MDPipeline:
         # Save markdown
         output_file.write_text(final_markdown, encoding='utf-8')
         
-        # Calculate processing time
+        # Calculate processing time & log summary
         processing_time = time.time() - start_time
-        
-        # Log summary
-        logger.info("=" * 50)
         logger.info("✨ Processing Complete!")
-        logger.info(f"📄 Input: {pdf_path}")
-        logger.info(f"📝 Output: {output_file}")
-        logger.info(f"📊 Pages: {successful_pages}/{len(page_results)} processed")
-        logger.info(f"📏 Size: {len(final_markdown)} characters")
         logger.info(f"⏱️ Processing time: {processing_time:.2f} seconds")
-        logger.info("=" * 50)
         
         # Output processing report to stdout instead of saving to file
         report = {
