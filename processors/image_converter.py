@@ -8,6 +8,9 @@ from pathlib import Path
 import io
 from PIL import Image
 
+# Increase PIL safety limit for high-resolution PDFs (default is ~89M pixels)
+Image.MAX_IMAGE_PIXELS = 200000000  # 200M pixels
+
 from utils.logger import logger
 
 

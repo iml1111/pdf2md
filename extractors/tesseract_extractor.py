@@ -9,6 +9,9 @@ from PIL import Image, ImageEnhance, ImageFilter
 import io
 import logging
 
+# Increase PIL safety limit for high-resolution PDFs (default is ~89M pixels)
+Image.MAX_IMAGE_PIXELS = 200000000  # 200M pixels
+
 # Tesseract OCR
 import pytesseract
 
