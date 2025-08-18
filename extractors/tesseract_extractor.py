@@ -10,12 +10,7 @@ import io
 import logging
 
 # Tesseract OCR
-try:
-    import pytesseract
-    TESSERACT_AVAILABLE = True
-except ImportError:
-    TESSERACT_AVAILABLE = False
-    pytesseract = None
+import pytesseract
 
 from utils.logger import logger, log_extraction_result
 
@@ -27,9 +22,6 @@ class TesseractExtractor:
         """초기화"""
         self.name = "Tesseract-OCR"
         
-        if not TESSERACT_AVAILABLE:
-            logger.warning("pytesseract not installed. Install with: pip install pytesseract")
-            return
         
         # Tesseract 설정
         self.languages = 'kor+eng'  # 한국어 + 영어
@@ -88,10 +80,6 @@ class TesseractExtractor:
     
     def extract_from_images(self, images: List[bytes]) -> Dict[str, Any]:
         """이미지에서 텍스트 추출 (부분 결과 반환 지원)"""
-        
-        if not TESSERACT_AVAILABLE:
-            logger.warning("Tesseract not available")
-            return {'text': '', 'error': 'Tesseract not available'}
         
         try:
             result = {
