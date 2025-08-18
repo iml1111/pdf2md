@@ -93,37 +93,6 @@ class PyMuPDFExtractor:
             logger.error(f"PyMuPDF structure extraction failed for page {page_number}: {e}")
             return {}
     
-    def extract_as_images(self, pdf_path: str, dpi: int = 300) -> List[bytes]:
-        """
-        Convert PDF pages to images
-        
-        Args:
-            pdf_path: Path to PDF file
-            dpi: Resolution for image conversion
-            
-        Returns:
-            List of image bytes
-        """
-        images = []
-        try:
-            doc = fitz.open(pdf_path)
-            
-            for page_num, page in enumerate(doc):
-                # Convert to image
-                mat = fitz.Matrix(dpi/72.0, dpi/72.0)
-                pix = page.get_pixmap(matrix=mat)
-                img_data = pix.tobytes("png")
-                images.append(img_data)
-                pix = None
-            
-            doc.close()
-            logger.info(f"Converted {len(images)} pages to images at {dpi} DPI")
-            return images
-            
-        except Exception as e:
-            logger.error(f"Failed to convert PDF to images: {e}")
-            return []
-    
     def _process_blocks(self, blocks_dict: Dict) -> List[Dict]:
         """Process text blocks to extract structure"""
         processed_blocks = []

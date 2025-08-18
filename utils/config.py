@@ -41,13 +41,6 @@ class Config(BaseModel):
     image_dpi: int = Field(default=600, ge=150, le=900)
     output_dir: str = Field(default="output")
     
-    @classmethod
-    def from_file(cls, path: str):
-        """Load configuration from JSON file"""
-        import json
-        with open(path, 'r') as f:
-            data = json.load(f)
-        return cls(**data)
 
 
 # Global configuration instance
@@ -62,12 +55,3 @@ def get_config() -> Config:
     return _config
 
 
-def update_config(**kwargs) -> Config:
-    """Update global configuration with provided values"""
-    global _config
-    if _config is None:
-        _config = Config()
-    for key, value in kwargs.items():
-        if hasattr(_config, key):
-            setattr(_config, key, value)
-    return _config

@@ -102,32 +102,3 @@ class APIRateLimiters:
             return self.general
 
 
-# Global rate limiter instance
-_rate_limiters = None
-
-
-def get_rate_limiters() -> APIRateLimiters:
-    """Get or create global rate limiters instance"""
-    global _rate_limiters
-    if _rate_limiters is None:
-        _rate_limiters = APIRateLimiters()
-    return _rate_limiters
-
-
-async def rate_limited_call(provider: str, async_func, *args, **kwargs):
-    """
-    Make a rate-limited API call
-    
-    Args:
-        provider: API provider name
-        async_func: Async function to call
-        *args, **kwargs: Arguments for the function
-        
-    Returns:
-        Result from the function call
-    """
-    limiters = get_rate_limiters()
-    limiter = limiters.get_limiter(provider)
-    
-    async with limiter:
-        return await async_func(*args, **kwargs)

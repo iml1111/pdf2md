@@ -27,32 +27,12 @@ logger.add(
 )
 
 
-def get_progress_bar() -> Progress:
-    """Create a progress bar for long-running operations"""
-    return Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
-        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-        TimeRemainingColumn(),
-        console=console
-    )
-
-
 def log_extraction_result(extractor_name: str, success: bool, details: str = ""):
     """Log extraction result with appropriate formatting"""
     if success:
         logger.success(f"{extractor_name}: Extraction completed. {details}")
     else:
         logger.error(f"{extractor_name}: Extraction failed. {details}")
-
-
-def log_step(step: str, description: str = ""):
-    """Log a pipeline step"""
-    logger.info(f"[STEP] {step}: {description}")
-    console.print(f"[bold blue]→[/bold blue] {step}", style="bold")
-    if description:
-        console.print(f"  {description}", style="dim")
 
 
 def setup_logger(name: str = "hybrid_pipeline", level: str = "INFO"):
@@ -79,4 +59,4 @@ def setup_logger(name: str = "hybrid_pipeline", level: str = "INFO"):
     return logger
 
 
-__all__ = ['logger', 'console', 'get_progress_bar', 'log_extraction_result', 'log_step', 'setup_logger']
+__all__ = ['logger', 'console', 'log_extraction_result', 'setup_logger']
