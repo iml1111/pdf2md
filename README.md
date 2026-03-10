@@ -2,327 +2,188 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
 A high-quality PDF to Markdown converter that uses multiple extraction engines and AI-powered merging to produce superior results, especially for complex layouts, tables, and mixed-language documents.
 
-## ✨ Key Features
+## Key Features
 
-- **🚀 Multi-Engine Extraction**: Runs 5 different extraction methods in parallel for comprehensive text capture
-- **🤖 AI-Powered Merging**: Uses LLMs (Claude/OpenAI) to intelligently merge and correct extraction results
-- **📄 Page-by-Page Processing**: Prevents context mixing and ensures accurate document structure preservation
-- **🌏 Multilingual Support**: Excellent support for mixed-language documents (English, Korean, Chinese, Japanese, etc.)
-- **📊 Superior Table Extraction**: Combines multiple engines for accurate table structure preservation
-- **⚡ Parallel Processing**: Efficient batch processing with configurable concurrency
-- **🎯 AI-Powered Selection**: LLM intelligently combines all extraction results for optimal accuracy
+- **Multi-Engine Extraction**: Runs 4 specialized extractors in parallel for comprehensive text capture
+- **AI-Powered Merging**: Uses LLMs (Claude/Gemini/GPT) to intelligently merge and correct extraction results
+- **Adaptive Merge Strategy**: Dynamically adjusts merging approach based on PDF type (native vs scanned)
+- **Multilingual Support**: Excellent support for mixed-language documents (English, Korean, Chinese, Japanese, etc.)
+- **Superior Table Extraction**: PDFPlumber-based table detection with markdown conversion
+- **Hyperlink Preservation**: Detects and preserves hyperlinks from PDF annotations
+- **CLOVA OCR Integration**: Naver CLOVA OCR for precise character-level text recognition
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
 
 - Python 3.11+
-- Tesseract OCR (optional, for OCR functionality)
-- API key for Claude (Anthropic) or OpenAI
+- API key for at least one LLM provider (Anthropic, Google, or OpenAI)
+- CLOVA OCR credentials (optional, for enhanced OCR)
 
 ### Installation
 
 ```bash
-# Clone the repository
 git clone https://github.com/yourusername/pdf2md.git
 cd pdf2md
-
-# Install dependencies
 pip install -r requirements.txt
+```
 
-# Set up API keys
-echo "ANTHROPIC_API_KEY=your_claude_api_key" > .env
-# or
-echo "OPENAI_API_KEY=your_openai_api_key" > .env
+### Environment Setup
+
+Create a `.env` file in the project root:
+
+```bash
+# LLM Provider (at least one required)
+ANTHROPIC_API_KEY=sk-ant-xxxxxxxxxxxxx
+GOOGLE_API_KEY=xxxxxxxxxxxxx
+OPENAI_API_KEY=sk-xxxxxxxxxxxxx
+
+# CLOVA OCR (optional)
+CLOVA_OCR_URL=https://your-clova-ocr-endpoint
+CLOVA_OCR_SECRET=your-secret-key
 ```
 
 ### Basic Usage
 
 ```bash
-# Convert a PDF to Markdown
+# Convert with default provider (Anthropic)
 python main.py --in document.pdf
 
 # Specify output path
 python main.py --in document.pdf --out output.md
 
-# Use specific LLM provider
-python main.py --in document.pdf --llm claude
+# Use Google Gemini
+python main.py --in document.pdf --llm google
+
+# Use OpenAI
+python main.py --in document.pdf --llm openai
 ```
 
-## 🏗️ Architecture
+## Architecture
 
-### System Overview
+### Pipeline Overview
 
-```mermaid
-graph TB
-    subgraph Input
-        PDF[PDF Document]
-    end
-    
-    subgraph "Extraction Layer (Parallel)"
-        PDF --> E1[PyMuPDF<br/>Fast text extraction]
-        PDF --> E2[pdfplumber<br/>Table specialist]
-        PDF --> IMG[Image Converter]
-        IMG --> E3[Tesseract OCR<br/>Image text recognition]
-        IMG --> E4[LLM Image<br/>Visual understanding]
-        PDF --> E5[LLM PDF<br/>Native PDF analysis]
-    end
-    
-    subgraph "AI Processing Layer"
-        E1 --> LM[LLM Merger<br/>Intelligent combining]
-        E2 --> LM
-        E3 --> LM
-        E4 --> LM
-        E5 --> LM
-        LM --> PO[Page Orchestrator<br/>Page integration]
-        PO --> FO[Final Orchestrator<br/>Document generation]
-    end
-    
-    subgraph Output
-        FO --> MD[Markdown File]
-        FO --> JSON[Extraction Report]
-    end
-    
-    style PDF fill:#e1f5fe
-    style MD fill:#c8e6c9
-    style LM fill:#fff9c4
-    style PO fill:#fff9c4
-    style FO fill:#fff9c4
+```
+PDF Document
+    │
+    ▼
+Page Splitter (PyMuPDF)
+    │
+    ▼ (per page, parallel)
+┌───────────────────────────────────────────┐
+│  4 Extractors (concurrent)                │
+│  ├── PDFPlumber  (text + tables + meta)   │
+│  ├── PyMuPDF     (hyperlinks only)        │
+│  ├── CLOVA OCR   (async HTTP)             │
+│  └── LLM Image   (multimodal vision)      │
+└───────────────────────────────────────────┘
+    │
+    ▼
+LLM Merger (adaptive 4-source merge)
+    │
+    ▼
+Final Orchestrator (markdown generation)
+    │
+    ▼
+Markdown Output
 ```
 
 ### Extraction Engines
 
-| Engine | Strengths | Best For |
-|--------|-----------|----------|
-| **PyMuPDF** | Fast, reliable text extraction | Standard PDFs with selectable text |
-| **pdfplumber** | Excellent table detection | Documents with complex tables |
-| **Tesseract OCR** | Optical character recognition | Scanned documents, images |
-| **LLM PDF** | Context understanding | Complex layouts, mixed content |
-| **LLM Image** | Visual comprehension | Charts, diagrams, handwriting |
+| Engine | Role | Strengths |
+|--------|------|-----------|
+| **PDFPlumber** | Text + Tables + Metadata | Native PDF text, table structures, layout measurements |
+| **PyMuPDF** | Hyperlink Detection | Link type classification (text/image/form/annotation/drawing/area) |
+| **CLOVA OCR** | Precise Text Recognition | Character-level precision, Korean text, multilingual support |
+| **LLM Image** | Visual Understanding | Visual layout interpretation, reading order, document flow |
 
-### Processing Pipeline
+### LLM Providers
 
-1. **Page Splitting**: PDF is split into individual pages for independent processing
-2. **Parallel Extraction**: All 5 engines process each page simultaneously
-3. **AI Merging**: LLM intelligently combines and corrects results from all extractors
-4. **Page Integration**: Individual page results are integrated without formatting
-5. **Final Generation**: Complete markdown document with proper formatting
+| Provider | Model | Rate Limit | Use Case |
+|----------|-------|------------|----------|
+| Anthropic | claude-sonnet-4-20250514 | 5 req/s | Default, balanced performance |
+| Google | gemini-2.5-flash | 3 req/s | Fast, cost-effective |
+| OpenAI | gpt-5-2025-08-07 | 10 req/s | High throughput |
 
-## 📦 Installation
+### Adaptive Merge Strategy
 
-### System Requirements
+The LLM Merger evaluates PDFPlumber output quality and adjusts its strategy:
 
-- **Python**: 3.11 or higher
-- **Memory**: 4GB RAM minimum (8GB recommended for large PDFs)
-- **Storage**: 1GB free space for dependencies
+- **Text-rich native PDFs**: PDFPlumber as primary source, CLOVA OCR for validation
+- **Image-heavy/scanned PDFs**: CLOVA OCR + LLM Image as primary, PDFPlumber deprioritized
+- **Hyperlinks**: PyMuPDF links integrated inline as `[text](#)` markdown format
 
-### Detailed Setup
+## Project Structure
 
-#### macOS
-
-```bash
-# Install Tesseract OCR (optional but recommended)
-brew install tesseract tesseract-lang
-
-# Clone and setup
-git clone https://github.com/yourusername/pdf2md.git
-cd pdf2md
-pip install -r requirements.txt
+```
+pdf2md/
+├── main.py                  # CLI entry point
+├── prompts.py               # Centralized LLM prompts
+├── extractors/
+│   ├── pdfplumber_extractor.py   # Text + tables + metadata
+│   ├── pymupdf_extractor.py      # Hyperlink-only extraction
+│   ├── clova_ocr_extractor.py    # CLOVA OCR API integration
+│   └── llm_extractor.py          # Multimodal LLM extraction
+├── processors/
+│   ├── single_page_pipeline.py   # Per-page orchestration
+│   ├── llm_merger.py             # Adaptive 4-source merging
+│   ├── final_orchestrator.py     # Final markdown generation
+│   └── image_converter.py        # PDF-to-image conversion
+└── utils/
+    ├── config.py                  # Pydantic configuration
+    ├── rate_limiter.py            # API rate limiting
+    ├── logger.py                  # Loguru logging
+    └── validators.py              # PDF validation
 ```
 
-#### Ubuntu/Debian
+## Documentation
 
-```bash
-# Install Tesseract OCR (optional but recommended)
-sudo apt-get update
-sudo apt-get install tesseract-ocr tesseract-ocr-all
+| Document | Content |
+|----------|---------|
+| [docs/architecture.md](docs/architecture.md) | Directory structure, execution model, module dependencies |
+| [docs/pipeline.md](docs/pipeline.md) | 4-extractor pipeline, merge strategy, processing flow |
+| [docs/integrations.md](docs/integrations.md) | LLM providers, CLOVA OCR, rate limiting, configuration |
+| [docs/conventions.md](docs/conventions.md) | Development rules, adding extractors/providers |
 
-# Clone and setup
-git clone https://github.com/yourusername/pdf2md.git
-cd pdf2md
-pip install -r requirements.txt
-```
+## Configuration
 
-#### Windows
+Configuration is managed via Pydantic models with environment variable defaults:
 
-```bash
-# Install Tesseract from: https://github.com/UB-Mannheim/tesseract/wiki
-# Add Tesseract to PATH
+| Config | Field | Default | Description |
+|--------|-------|---------|-------------|
+| LLM | `provider` | `anthropic` | LLM provider (`anthropic`/`google`/`openai`) |
+| LLM | `max_tokens` | `16384` | Max output tokens |
+| LLM | `temperature` | `0.1` | LLM temperature |
+| LLM | `dynamic_token_adjustment` | `true` | Auto-adjust tokens for Korean/English ratio |
+| Image | `image_dpi` | `300` | Image conversion DPI (150-900) |
 
-# Clone and setup
-git clone https://github.com/yourusername/pdf2md.git
-cd pdf2md
-pip install -r requirements.txt
-```
+## Dependencies
 
-### API Key Configuration
+### Core
+- **PyMuPDF** >= 1.24.0 — PDF processing and hyperlink extraction
+- **pdfplumber** >= 0.11.0 — Table detection and text extraction
+- **Pillow** >= 10.3.0 — Image processing
 
-Create a `.env` file in the project root:
+### LLM Providers
+- **anthropic** >= 0.34.0 — Claude API
+- **google-genai** >= 1.0.0 — Gemini API
+- **openai** >= 1.40.0 — OpenAI API
 
-```bash
-# For Claude (Anthropic)
-ANTHROPIC_API_KEY=sk-ant-xxxxxxxxxxxxx
+### Infrastructure
+- **aiohttp** >= 3.9.0 — Async HTTP for CLOVA OCR
+- **pydantic** >= 2.0.0 — Configuration management
+- **loguru** >= 0.7.0 — Structured logging
 
-# For OpenAI
-OPENAI_API_KEY=sk-xxxxxxxxxxxxx
-
-# You only need one of the above
-```
-
-## ⚙️ Configuration
-
-### Custom Configuration File
-
-Create a `config.json` for custom settings:
-
-```json
-{
-  "llm": {
-    "provider": "anthropic",
-    "claude_model": "claude-3-5-sonnet-20241022",
-    "openai_model": "gpt-4o",
-    "max_tokens": 16384,
-    "temperature": 0.1
-  },
-  "image_dpi": 300
-}
-```
-
-Use custom configuration:
-
-```bash
-python main.py --in document.pdf --config config.json
-```
-
-### Environment Variables
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `ANTHROPIC_API_KEY` | Claude API key | required |
-| `OPENAI_API_KEY` | OpenAI API key | required |
-
-## 📖 Usage
-
-### Command Line Interface
-
-```bash
-# Basic conversion
-python main.py --in input.pdf
-
-# Specify output path
-python main.py --in input.pdf --out output.md
-
-# High-resolution image processing
-python main.py --in input.pdf --dpi 300
-
-# Use specific LLM provider
-python main.py --in input.pdf --llm openai
-
-# Custom configuration
-python main.py --in input.pdf --config custom.json
-```
-
-### Python API
-
-```python
-from pdf2md import PDF2MDPipeline
-from utils.config import Config
-
-# Initialize pipeline
-config = Config()
-pipeline = PDF2MDPipeline(config)
-
-# Convert PDF to Markdown
-output_path = pipeline.process_pdf("document.pdf", "output.md")
-print(f"Conversion complete: {output_path}")
-```
-
-### Batch Processing
-
-```python
-import glob
-from pdf2md import PDF2MDPipeline
-
-pipeline = PDF2MDPipeline()
-
-# Process all PDFs in a directory
-for pdf_path in glob.glob("pdfs/*.pdf"):
-    try:
-        output = pipeline.process_pdf(pdf_path)
-        print(f"✓ Converted: {pdf_path} → {output}")
-    except Exception as e:
-        print(f"✗ Failed: {pdf_path}: {e}")
-```
-
-## 📊 Performance
-
-### Benchmarks
-
-| Document Type | Pages | Processing Time | Accuracy |
-|---------------|-------|-----------------|----------|
-| Text-heavy PDF | 10 | ~30 seconds | 99% |
-| Mixed content | 20 | ~60 seconds | 97% |
-| Scanned document | 15 | ~120 seconds | 95% |
-| Complex tables | 25 | ~150 seconds | 96% |
-
-### Resource Usage
-
-- **Memory**: ~300-500MB per 10 pages
-- **CPU**: Scales with available cores (parallel processing)
-- **API Calls**: 2-3 per page (rate-limited)
-
-## 🤝 Contributing
-
-We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
-
-### Development Setup
-
-```bash
-# Clone the repository
-git clone https://github.com/yourusername/pdf2md.git
-cd pdf2md
-
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install in development mode
-pip install -e .
-pip install -r requirements-dev.txt
-
-# Run tests
-pytest tests/
-```
-
-### Code Style
-
-We use [Black](https://github.com/psf/black) for code formatting:
-
-```bash
-# Format code
-black .
-
-# Check formatting
-black --check .
-```
-
-## 📄 License
+## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
-- [PyMuPDF](https://github.com/pymupdf/PyMuPDF) for fast PDF processing
-- [pdfplumber](https://github.com/jsvine/pdfplumber) for excellent table extraction
-- [Tesseract OCR](https://github.com/tesseract-ocr/tesseract) for OCR capabilities
-- [Anthropic](https://www.anthropic.com/) and [OpenAI](https://openai.com/) for LLM APIs
-
----
-
-<div align="center">
-Made with ❤️ by the pdf2md contributors
-</div>
+- [PyMuPDF](https://github.com/pymupdf/PyMuPDF) for PDF processing
+- [pdfplumber](https://github.com/jsvine/pdfplumber) for table extraction
+- [Naver CLOVA OCR](https://clova.ai/) for precise text recognition
+- [Anthropic](https://www.anthropic.com/), [Google](https://ai.google.dev/), and [OpenAI](https://openai.com/) for LLM APIs
