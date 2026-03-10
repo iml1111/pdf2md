@@ -1,167 +1,94 @@
 # Contributing to pdf2md
 
-First off, thank you for considering contributing to pdf2md! It's people like you that make pdf2md such a great tool.
-
-## Code of Conduct
-
-This project and everyone participating in it is governed by our Code of Conduct. By participating, you are expected to uphold this code.
+Thank you for considering contributing to pdf2md!
 
 ## How Can I Contribute?
 
 ### Reporting Bugs
 
-Before creating bug reports, please check existing issues as you might find out that you don't need to create one. When you are creating a bug report, please include as many details as possible:
+When creating a bug report, please include:
 
-* **Use a clear and descriptive title**
-* **Describe the exact steps which reproduce the problem**
-* **Provide specific examples to demonstrate the steps**
-* **Describe the behavior you observed after following the steps**
-* **Explain which behavior you expected to see instead and why**
-* **Include details about your configuration and environment**
-
-### Suggesting Enhancements
-
-Enhancement suggestions are tracked as GitHub issues. When creating an enhancement suggestion, please include:
-
-* **Use a clear and descriptive title**
-* **Provide a step-by-step description of the suggested enhancement**
-* **Provide specific examples to demonstrate the steps**
-* **Describe the current behavior and explain which behavior you expected to see instead**
-* **Explain why this enhancement would be useful**
+* Clear and descriptive title
+* Steps to reproduce the problem
+* Expected vs actual behavior
+* Environment details (OS, Python version, LLM provider)
 
 ### Pull Requests
 
-1. Fork the repo and create your branch from `main`.
-2. If you've added code that should be tested, add tests.
-3. If you've changed APIs, update the documentation.
-4. Ensure the test suite passes.
-5. Make sure your code follows the existing code style.
-6. Issue that pull request!
+1. Fork the repo and create your branch from `main`
+2. If you've added code, add tests
+3. If you've changed APIs, update documentation
+4. Ensure the test suite passes
+5. Follow existing code style
 
-## Development Process
-
-### Setting Up Your Development Environment
+## Development Setup
 
 ```bash
-# Fork and clone the repository
 git clone https://github.com/yourusername/pdf2md.git
 cd pdf2md
-
-# Create a virtual environment
 python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install dependencies
+source venv/bin/activate
 pip install -r requirements.txt
-pip install -r requirements-dev.txt
 ```
 
-### Code Style
-
-We use Black for Python code formatting. Before committing:
-
-```bash
-# Format your code
-black .
-
-# Check if formatting is correct
-black --check .
-
-# Run linting
-pylint pdf2md/
-```
-
-### Running Tests
-
-```bash
-# Run all tests
-pytest
-
-# Run with coverage
-pytest --cov=pdf2md
-
-# Run specific test file
-pytest tests/test_extractors.py
-```
-
-### Project Structure
+## Project Structure
 
 ```
 pdf2md/
-├── extractors/          # PDF extraction engines
-│   ├── pymupdf_extractor.py
-│   ├── pdfplumber_extractor.py
-│   ├── tesseract_extractor.py
-│   └── llm_extractor.py
-├── processors/          # Processing pipeline
-│   ├── single_page_pipeline.py
-│   ├── page_orchestrator.py
-│   └── final_orchestrator.py
-├── utils/              # Utility modules
-│   ├── config.py
-│   ├── logger.py
-│   └── validators.py
-├── tests/              # Test files
-└── main.py            # CLI entry point
+├── extractors/              # PDF extraction engines
+│   ├── pdfplumber_extractor.py   # Text + tables + metadata
+│   ├── pymupdf_extractor.py      # Hyperlink-only extraction
+│   ├── clova_ocr_extractor.py    # CLOVA OCR API
+│   └── llm_extractor.py          # Multimodal LLM extraction
+├── processors/              # Processing pipeline
+│   ├── single_page_pipeline.py   # Per-page orchestration
+│   ├── llm_merger.py             # Adaptive 4-source merging
+│   ├── final_orchestrator.py     # Final markdown generation
+│   └── image_converter.py        # PDF-to-image conversion
+├── utils/                   # Utilities
+│   ├── config.py                 # Pydantic configuration
+│   ├── rate_limiter.py           # API rate limiting
+│   ├── logger.py                 # Loguru logging
+│   └── validators.py             # PDF validation
+├── prompts.py               # Centralized LLM prompts
+└── main.py                  # CLI entry point
 ```
 
-### Adding a New Extractor
+## Adding a New Extractor
 
-To add a new extraction engine:
-
-1. Create a new file in `extractors/` directory
-2. Implement the base extractor interface:
+1. Create a new file in `extractors/`
+2. Implement with async support:
 
 ```python
 class MyExtractor:
-    def __init__(self):
+    def __init__(self, config):
         self.name = "MyExtractor"
-    
-    def extract_text(self, pdf_bytes: bytes, page_number: int) -> str:
+
+    async def extract_text(self, page_pdf_bytes: bytes, page_number: int) -> Optional[str]:
         """Extract text from a single PDF page"""
-        # Your implementation here
-        pass
-    
-    def extract_structure(self, pdf_bytes: bytes, page_number: int) -> Dict:
-        """Extract document structure"""
-        # Your implementation here
         pass
 ```
 
-3. Add the extractor to `single_page_pipeline.py`
-4. Update the default weights in `config.py`
-5. Add tests for your extractor
+3. Add the extractor to `processors/single_page_pipeline.py`
+4. Update the merge prompt in `prompts.py`
 
-### Commit Messages
+## Adding a New LLM Provider
 
-We follow the Conventional Commits specification:
+1. Add API key field to `LLMConfig` in `utils/config.py`
+2. Add provider routing in `extractors/llm_extractor.py`
+3. Add provider routing in `processors/llm_merger.py` and `processors/final_orchestrator.py`
+4. Add rate limit config in `utils/rate_limiter.py`
 
-* `feat:` A new feature
-* `fix:` A bug fix
-* `docs:` Documentation only changes
-* `style:` Changes that don't affect the meaning of the code
-* `refactor:` A code change that neither fixes a bug nor adds a feature
-* `perf:` A code change that improves performance
-* `test:` Adding missing tests or correcting existing tests
-* `chore:` Changes to the build process or auxiliary tools
+## Commit Messages
 
-Examples:
-```
-feat: add support for encrypted PDFs
-fix: handle unicode characters in table extraction
-docs: update installation instructions for Windows
-```
+Follow Conventional Commits:
 
-## Review Process
+* `feat:` New feature
+* `fix:` Bug fix
+* `docs:` Documentation changes
+* `refactor:` Code restructuring
+* `test:` Test changes
 
-1. A maintainer will review your PR within 3-5 business days
-2. Address any feedback or requested changes
-3. Once approved, your PR will be merged
+## All LLM Prompts
 
-## Recognition
-
-Contributors will be recognized in our README and release notes. Thank you for your contributions!
-
-## Questions?
-
-Feel free to open an issue with the tag "question" or reach out to the maintainers directly.
+All prompts used by LLM modules must be managed in `prompts.py`. Do not hardcode prompts in extractor or processor files.
