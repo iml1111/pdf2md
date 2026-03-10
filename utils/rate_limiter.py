@@ -91,6 +91,8 @@ class APIRateLimiters:
             return self.anthropic
         elif 'openai' in provider_lower or 'gpt' in provider_lower:
             return self.openai
+        elif 'google' in provider_lower or 'gemini' in provider_lower:
+            return self.general
         else:
             return self.general
 

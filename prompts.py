@@ -10,25 +10,7 @@ from typing import Dict, Any
 
 # ===== EXTRACTION PROMPTS (Used by LLMExtractor) =====
 
-# PDF Extraction Prompt - Used for full PDF extraction
-PDF_EXTRACTION_PROMPT = """Extract ALL text from this PDF document COMPLETELY.
 
-CRITICAL REQUIREMENTS:
-1. PRESERVE ALL CONTENT - Do not summarize or abbreviate ANYTHING
-2. Extract text in reading order
-3. Include all headers, footers, page numbers
-4. Extract all tables, maintaining structure
-5. Include all lists and bullet points
-6. Preserve all technical terms and codes exactly
-7. Extract all metadata (titles, authors, dates, etc.)
-8. Include figure/image captions and labels
-9. DO NOT omit any paragraphs or sections
-10. DO NOT use phrases like "continues with..." or "and so on"
-
-전문 출력 필수 - 절대 요약하지 마세요!
-모든 내용을 빠짐없이 포함해야 합니다.
-
-Provide the COMPLETE text extraction."""
 
 # Image Extraction Prompt - Used for image-based extraction
 IMAGE_EXTRACTION_PROMPT = """Extract ALL text from these document images COMPLETELY.
@@ -50,21 +32,9 @@ CRITICAL INSTRUCTIONS:
 
 Output the COMPLETE text from all pages."""
 
-# Single Page PDF Extraction Prompt - For page-specific PDF extraction
-SINGLE_PAGE_PDF_PROMPT = """Extract ALL text from this single PDF page COMPLETELY.
 
-This is page {page_number} of {total_pages}.
 
-REQUIREMENTS:
-1. Extract EVERY word and character from this specific page
-2. DO NOT summarize or abbreviate anything
-3. Include all headers, footers, and margin content
-4. Preserve the exact content of this page
-5. Include any tables, lists, or special formatting as text
-
-Output the complete text from this page only."""
-
-# Single Page Image Extraction Prompt - For page-specific image extraction  
+# Single Page Image Extraction Prompt - For page-specific image extraction
 SINGLE_PAGE_IMAGE_PROMPT = """Extract ALL text from this page image with maximum detail.
 
 This is page {page_number} of {total_pages}.
@@ -73,7 +43,7 @@ CRITICAL EXTRACTION REQUIREMENTS:
 1. Extract EVERY piece of text, no matter how small or faint
 2. Include text from:
    - Main content area
-   - Headers and footers  
+   - Headers and footers
    - Page numbers
    - Margins and annotations
    - Watermarks or background text
@@ -90,120 +60,100 @@ CRITICAL EXTRACTION REQUIREMENTS:
    - Extract text from logos or branding
 5. DO NOT skip anything - even single characters matter
 
-IMPORTANT: Even if the page seems to have little content, extract whatever is visible. 
+IMPORTANT: Even if the page seems to have little content, extract whatever is visible.
 Never return empty results unless the page is completely blank.
 
 Output ALL extracted text from this page."""
 
 
-# ===== INTEGRATION PROMPTS (Used by LLMMerger and PageOrchestrator) =====
+# ===== INTEGRATION PROMPTS (Used by LLMMerger) =====
 
 # LLM Merge Prompt Template - Used by LLMMerger for combining extraction results
 def get_llm_merge_prompt(extraction_data: str) -> str:
     """
     Create prompt for LLM to merge extractions intelligently
-    
+
     Args:
         extraction_data: Formatted extraction results from multiple extractors
-        
+
     Returns:
         Complete prompt for merging
     """
-    return f"""You are merging text extraction results from multiple PDF extractors.
-Each extractor has different strengths and reliability levels based on the PDF type.
+    return f"""You are merging text extraction results from four complementary extractors, each with distinct strengths.
 
-EXTRACTOR RELIABILITY HIERARCHY:
-1. PyMuPDF & PDFPlumber (HIGHEST PRIORITY):
-   - Most accurate for native PDF text (not scanned)
-   - When these have text, prefer their content over others
-   - Especially trust for: dates, numbers, emails, URLs, proper formatting
+EXTRACTOR CHARACTERISTICS:
 
-2. Tesseract OCR (MEDIUM PRIORITY):
-   - Primary source for scanned PDFs when PyMuPDF/PDFPlumber have no text
-   - May have OCR errors: spaces in words, wrong characters (0/O, 1/l)
-   - Good for: overall content structure, main text body
-   - Needs correction for: OCR artifacts, broken words, spacing issues
+PDFPlumber (정적 텍스트/레이아웃 추출):
+- Specializes in native PDF text extraction and structural analysis
+- Excels at: table structures, precise positioning, formatting preservation
+- Provides: clean text from native PDF elements, table data, layout measurements
+- Strength: Static document structure and embedded text elements
+- Limitation: May produce empty or fragmented results for image-heavy or scanned PDFs
 
-3. LLM-based extractors (LOWER PRIORITY):
-   - LLM PDF & LLM Image have similar reliability
-   - May hallucinate or modify content
-   - Use for: filling gaps, understanding context
-   - Be cautious with: specific numbers, dates, contact information
+LLM Image Extractor (텍스트/레이아웃 시각적 관점 추출):
+- Analyzes document from visual perspective and contextual understanding
+- Excels at: visual layout interpretation, document flow, contextual relationships
+- Provides: visual structure insights, reading order, document organization
+- Strength: Visual comprehension and contextual document understanding
 
-MERGING STRATEGY:
-1. If PyMuPDF or PDFPlumber have text → use as primary source
-2. If they're empty (scanned PDF) → use Tesseract as base, correct OCR errors
-3. Use LLM extractors to fill missing information and verify context
-4. For conflicts in specific data (numbers, emails, dates):
-   - Trust PyMuPDF/PDFPlumber first
-   - Then Tesseract (with OCR correction)
-   - LLM extractors last
+CLOVA OCR (텍스트 정밀 추출):
+- Performs precise optical character recognition on all text elements
+- Excels at: comprehensive text recognition, Korean characters, fine detail extraction
+- Provides: detailed text content, character-level precision, multilingual support
+- Strength: Precise text recognition and character accuracy
 
-COMMON OCR PATTERNS TO FIX:
-- Broken Korean: "개 발 자" → "개발자", "니 에서" → "트에서", "호 Contacts" → "Contacts"
-- Wrong symbols: "호" at line start → remove, "4" in phone → check context
-- Spacing: Remove unnecessary spaces within Korean words
-- Email/URL: Prefer versions without spaces or unusual characters
+PyMuPDF (하이퍼링크 감지):
+- Specializes in detecting hyperlinks in PDF documents
+- Excels at: identifying text with clickable links
+- Provides: information about which text had links (URL not preserved)
+- Strength: Accurate link detection from PDF annotations
+- IMPORTANT: When links are found, mark them as [text](#) to indicate link presence
 
-VALIDATION HINTS:
-- Korean phone: Should match 010-XXXX-XXXX pattern
-- Email: Should have @ and valid domain
-- Dates: Prefer consistent format (YYYY.MM or YYYY-MM)
-- Korean text: Should not have spaces within syllables
+MERGING APPROACH:
+1. Combine all four perspectives to create comprehensive extraction
+2. Assess PDFPlumber output quality - if empty/fragmented, rely more on CLOVA OCR and LLM Image Extractor
+3. Use PDFPlumber for structural foundation when it provides meaningful content
+4. Apply CLOVA OCR for precise text content, especially crucial for image-heavy documents
+5. Integrate LLM Image Extractor for visual context and reading flow
+6. For image-dominant PDFs: prioritize CLOVA OCR and LLM Image Extractor over sparse PDFPlumber results
+7. Cross-reference all sources to fill gaps and validate content
+8. Preserve the strongest aspects from each extractor type based on document characteristics
+9. Integrate PyMuPDF hyperlinks naturally into the text where relevant
+10. When text had links, use markdown format [text](#) to mark link presence
+11. Do NOT create separate sections for hyperlinks - integrate them inline with the content
 
 EXTRACTION RESULTS:
 {extraction_data}
 
+HYPERLINK INTEGRATION INSTRUCTIONS:
+- If HYPERLINK METADATA section shows "Text with link", format it as [text](#)
+- The # symbol indicates a hyperlink was present, but URL is not preserved
+- Example: "Text with link: 'GitHub'" → [GitHub](#)
+- Do NOT include actual URLs
+- Only mark text-based links, ignore image or other types
+
 CRITICAL RULES:
-- When PyMuPDF/PDFPlumber have content, use their structure and formatting
-- Fix Tesseract OCR errors but preserve its unique content
-- Don't trust LLM extractors for exact numbers/dates if other sources exist
-- Include ALL unique information from all sources
-- For contact info (phone, email), prefer the most common/repeated version
-- Maintain original document structure and order
-- Do NOT add information not present in any extraction
+- Leverage each extractor's unique strengths while considering document type
+- Evaluate PDFPlumber output quality: if minimal/empty, focus on CLOVA OCR and LLM Image Extractor
+- For text-rich native PDFs: utilize PDFPlumber's structural insights fully
+- For image-heavy/scanned PDFs: rely primarily on CLOVA OCR and LLM Image Extractor
+- Apply CLOVA OCR's precision for all text content, especially when PDFPlumber fails
+- Incorporate LLM Image Extractor's visual understanding for context and flow
+- Cross-reference all sources, giving more weight to sources with substantial content
+- When PDFPlumber provides good results: preserve its table structures and formatting
+- When PDFPlumber is sparse: don't force its limited data, focus on other extractors
+- Maintain text accuracy and character precision from CLOVA OCR
+- Follow visual layout and reading order insights from LLM Image Extractor
+- Include hyperlinks from PyMuPDF naturally in the text using markdown link format [text](#) to mark link presence
+- Do NOT include actual URLs, only mark that links existed
+- Only mark text-based links, ignore image or area links
+- Do NOT create separate sections for hyperlinks - integrate them inline with the content
+- Include ALL relevant information from sources that provide meaningful content
+- Adapt merging strategy based on the quality and completeness of each source
+- Do NOT add information not present in any extraction source
 - Return ONLY the merged text without commentary
 
 Merged text:"""
-
-
-# Page Integration Prompt Template - Used by PageOrchestrator
-def get_page_integration_prompt(
-    page_number: int,
-    total_pages: int,
-    text: str,
-) -> str:
-    """
-    Create prompt for integrating single page extraction results
-    
-    Args:
-        page_number: Current page number
-        total_pages: Total number of pages
-        text: Merged text from extractors
-        
-    Returns:
-        Complete prompt for page integration
-    """
-    return f"""You are integrating extraction results from page {page_number} of {total_pages}.
-
-Multiple extractors have processed this page and their results have been merged.
-Your task is to create a clean, integrated version of the page content.
-
-IMPORTANT INSTRUCTIONS:
-1. DO NOT add any markdown formatting (no #, *, **, etc.)
-2. Preserve ALL content - do not summarize or omit anything
-3. Maintain the natural reading order of the page
-4. Fix any obvious OCR errors or inconsistencies
-5. Preserve tables, lists, and structural elements as plain text
-6. Return ONLY the integrated text content
-
-Page content to integrate:
----
-{text}
----
-
-Please provide the integrated page content as plain text:"""
-
 
 # ===== GENERATION PROMPTS (Used by FinalOrchestrator) =====
 
@@ -214,11 +164,11 @@ def get_final_document_prompt(
 ) -> str:
     """
     Create prompt for final markdown document generation
-    
+
     Args:
         metadata: Document metadata (source file, pages, confidence, etc.)
         combined_content: Combined content from all pages
-        
+
     Returns:
         Complete prompt for final document generation
     """
@@ -228,7 +178,7 @@ Source: {metadata['source_file']} ({metadata['total_pages']} pages)
 
 Rules:
 - Use proper markdown formatting (#, ##, ###, -, *, **, tables)
-- PRESERVE ALL CONTENT COMPLETELY - no summarization or omission  
+- PRESERVE ALL CONTENT COMPLETELY - no summarization or omission
 - Fix OCR errors naturally
 - Remove [PAGE X] markers
 - Maintain original structure and order
@@ -244,32 +194,51 @@ Generate the complete markdown document:"""
 def format_extraction_data(results: Dict[str, Dict]) -> str:
     """
     Format extraction results for LLM processing with reliability indicators
-    
+
     Args:
         results: Dictionary mapping extractor name to results
-        
+
     Returns:
         Formatted string with all extraction results and reliability notes
     """
     extraction_texts = []
-    
+    hyperlink_info = []
+
     for name, result in results.items():
         text = result.get('text', '').strip()
+
+        # PyMuPDF 하이퍼링크 처리
+        if name == 'pymupdf':
+            hyperlinks = result.get('hyperlinks', [])
+            if hyperlinks:
+                # 하이퍼링크 정보를 별도로 수집하여 메타데이터로 전달
+                for link in hyperlinks:
+                    link_type = link.get('link_type', 'text')
+                    if link.get('url'):
+                        link_text = link.get('text', '').strip()
+                        # 텍스트가 있는 경우만 처리 (텍스트 링크만)
+                        if link_text and link_type == 'text':
+                            hyperlink_info.append(f"Text with link: '{link_text}'")
+                        # 텍스트가 없거나 다른 타입은 무시
+                    # Internal page links are excluded for resume extraction
+                    # elif link.get('page') is not None:  # Internal page link - SKIPPED
+                text = ""  # 별도 섹션으로 표시하지 않음
+
         if text:
-            # Add reliability indicators for each extractor
-            if name == 'pymupdf':
-                header = f"=== PYMUPDF EXTRACTION (Native PDF Reader - HIGH RELIABILITY) ==="
+            # Add characteristic indicators for each extractor
+            if name == 'clova_ocr':
+                header = f"=== CLOVA OCR EXTRACTION (텍스트 정밀 추출) ==="
             elif name == 'pdfplumber':
-                header = f"=== PDFPLUMBER EXTRACTION (Native PDF Reader - HIGH RELIABILITY) ==="
-            elif name == 'tesseract':
-                header = f"=== TESSERACT EXTRACTION (OCR - MEDIUM RELIABILITY, MAY HAVE ERRORS) ==="
-            elif name == 'llm_pdf':
-                header = f"=== LLM_PDF EXTRACTION (AI-based - LOWER RELIABILITY FOR SPECIFICS) ==="
+                header = f"=== PDFPLUMBER EXTRACTION (정적 텍스트/레이아웃 추출) ==="
             elif name == 'llm_img':
-                header = f"=== LLM_IMG EXTRACTION (AI-based - LOWER RELIABILITY FOR SPECIFICS) ==="
+                header = f"=== LLM_IMG EXTRACTION (텍스트/레이아웃 시각적 관점 추출) ==="
             else:
                 header = f"=== {name.upper()} EXTRACTION ==="
-            
+
             extraction_texts.append(f"{header}\n{text}\n")
-    
+
+    # 하이퍼링크 정보가 있으면 메타데이터로 추가
+    if hyperlink_info:
+        extraction_texts.append(f"=== HYPERLINK METADATA ===\n" + "\n".join(hyperlink_info) + "\n")
+
     return "\n".join(extraction_texts)

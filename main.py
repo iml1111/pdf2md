@@ -24,7 +24,6 @@ from utils.validators import validate_pdf_file
 
 # Import PDF processing modules
 from processors.single_page_pipeline import SinglePagePipeline
-from processors.page_orchestrator import PageOrchestrator
 from processors.final_orchestrator import FinalOrchestrator
 
 
@@ -39,7 +38,6 @@ class PDF2MDPipeline:
             config: Optional configuration object
         """
         self.config = config or get_config()
-        self.page_orchestrator = PageOrchestrator(self.config)
         self.final_orchestrator = FinalOrchestrator(self.config)
 
         logger.info("✅ PDF to Markdown pipeline initialized")
@@ -97,17 +95,9 @@ class PDF2MDPipeline:
             Integrated page result
         """
         try:
-            # Step 1: Process page through SinglePagePipeline
-            single_page_pipeline = SinglePagePipeline(page_number, total_pages)
-            merged_result = await single_page_pipeline.process_page(page_pdf_bytes)
-            
-            # Step 2: Integrate with PageOrchestrator (no formatting)
-            integrated_result = self.page_orchestrator.integrate_page_results(
-                merged_result, page_number, total_pages
-            )
-            
-            return integrated_result
-            
+            single_page_pipeline = SinglePagePipeline(page_number, total_pages, self.config)
+            result = await single_page_pipeline.process_page(page_pdf_bytes)
+            return result
         except Exception as e:
             logger.error(f"Failed to process page {page_number}: {e}")
             return {
@@ -269,7 +259,7 @@ def main():
     parser.add_argument(
         '--llm',
         type=str,
-        choices=['openai', 'anthropic'],
+        choices=['openai', 'anthropic', 'google'],
         default='anthropic',
         help='LLM provider to use '
     )
