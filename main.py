@@ -269,9 +269,17 @@ def main():
     setup_logger(level="INFO")
     config = get_config()
     
-    config.llm.provider = args.llm  
+    config.llm.provider = args.llm
     logger.info(f"✅ Using {config.llm.provider} as LLM provider")
-    
+
+    # Validate CLOVA OCR credentials
+    try:
+        config.clova_ocr.validate_credentials()
+    except ValueError as e:
+        logger.error(f"CLOVA OCR 설정 오류: {e}")
+        print(f"\n❌ {e}", file=sys.stderr)
+        return 1
+
     try:
         logger.info("🚀 Initializing PDF to Markdown Pipeline...")
         pipeline = PDF2MDPipeline(config)

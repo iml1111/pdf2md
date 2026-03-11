@@ -30,6 +30,21 @@ class ClovaOCRConfig(BaseModel):
     url: str = Field(default_factory=lambda: os.environ.get("CLOVA_OCR_URL", ""))
     secret_key: str = Field(default_factory=lambda: os.environ.get("CLOVA_OCR_SECRET", ""))
 
+    def validate_credentials(self) -> None:
+        """Validate that CLOVA OCR credentials are configured. Raises ValueError if missing."""
+        missing = []
+        if not self.url:
+            missing.append("CLOVA_OCR_URL")
+        if not self.secret_key:
+            missing.append("CLOVA_OCR_SECRET")
+        if missing:
+            raise ValueError(
+                f"CLOVA OCR 환경변수가 설정되지 않았습니다: {', '.join(missing)}\n"
+                f".env 파일에 다음 변수를 설정하세요:\n"
+                f"  CLOVA_OCR_URL=<your-clova-ocr-url>\n"
+                f"  CLOVA_OCR_SECRET=<your-clova-ocr-secret>"
+            )
+
 
 class Config(BaseModel):
     """Main pipeline configuration"""

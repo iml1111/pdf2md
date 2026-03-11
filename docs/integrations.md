@@ -79,8 +79,8 @@ Body (multipart):
 | `ANTHROPIC_API_KEY` | provider=anthropic 시 | Anthropic Claude API 키 |
 | `GOOGLE_API_KEY` | provider=google 시 | Google Gemini API 키 |
 | `OPENAI_API_KEY` | provider=openai 시 | OpenAI API 키 |
-| `CLOVA_OCR_URL` | 선택 | CLOVA OCR API 엔드포인트 |
-| `CLOVA_OCR_SECRET` | 선택 | CLOVA OCR 시크릿 키 |
+| `CLOVA_OCR_URL` | **필수** | CLOVA OCR API 엔드포인트 |
+| `CLOVA_OCR_SECRET` | **필수** | CLOVA OCR 시크릿 키 |
 
 `python-dotenv`로 프로젝트 루트의 `.env` 파일에서 로딩.
 
