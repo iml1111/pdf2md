@@ -6,8 +6,6 @@ import asyncio
 from typing import Any, Dict, List
 
 from anthropic import Anthropic
-from google import genai
-from google.genai.types import GenerateContentConfig
 from loguru import logger
 from openai import OpenAI
 
@@ -28,16 +26,12 @@ class LLMMerger:
         self.rate_limiters: APIRateLimiters = APIRateLimiters()
 
         self.anthropic_client = Anthropic(api_key=self.config.llm.anthropic_api_key)
-        self.google_client = genai.Client(api_key=self.config.llm.google_api_key)
         self.openai_client = OpenAI(api_key=self.config.llm.openai_api_key)
 
         self.provider: str = self.config.llm.provider
         if self.provider == "anthropic":
             self.model: str = self.config.llm.claude_model
             logger.info(f"LLM Merger preferring Claude: {self.model}")
-        elif self.provider == "google":
-            self.model: str = self.config.llm.google_model
-            logger.info(f"LLM Merger preferring Google: {self.model}")
         else:
             self.model: str = self.config.llm.openai_model
             logger.info(f"LLM Merger preferring OpenAI: {self.model}")
@@ -113,18 +107,6 @@ class LLMMerger:
                     messages=[{"role": "user", "content": prompt}]
                 )
                 return response.content[0].text
-
-            elif self.provider == "google":
-                response = await asyncio.to_thread(
-                    self.google_client.models.generate_content,
-                    model=self.model,
-                    contents=prompt,
-                    config=GenerateContentConfig(
-                        max_output_tokens=20000,
-                        temperature=0.1
-                    )
-                )
-                return response.text
 
             elif self.provider == "openai":
                 completion_params = {

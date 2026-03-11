@@ -12,12 +12,10 @@ load_dotenv()
 
 class LLMConfig(BaseModel):
     """LLM provider configuration"""
-    provider: str = Field(default="anthropic", pattern="^(anthropic|google|openai)$")
+    provider: str = Field(default="anthropic", pattern="^(anthropic|openai)$")
     anthropic_api_key: str = Field(default_factory=lambda: os.environ.get("ANTHROPIC_API_KEY", ""))
-    google_api_key: str = Field(default_factory=lambda: os.environ.get("GOOGLE_API_KEY", ""))
     openai_api_key: str = Field(default_factory=lambda: os.environ.get("OPENAI_API_KEY", ""))
     claude_model: str = Field(default="claude-sonnet-4-20250514")
-    google_model: str = Field(default="gemini-2.5-flash")
     openai_model: str = Field(default="gpt-5-2025-08-07")
     max_tokens: int = Field(default=16384)
     max_tokens_limit: int = Field(default=128000)

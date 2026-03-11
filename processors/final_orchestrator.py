@@ -6,8 +6,6 @@ import re
 from typing import Any, Dict, List
 
 from anthropic import Anthropic
-from google import genai
-from google.genai.types import GenerateContentConfig
 from loguru import logger
 from openai import OpenAI
 
@@ -25,13 +23,10 @@ class FinalOrchestrator:
         self.config = config
 
         self.anthropic_client = Anthropic(api_key=self.config.llm.anthropic_api_key)
-        self.google_client = genai.Client(api_key=self.config.llm.google_api_key)
         self.openai_client = OpenAI(api_key=self.config.llm.openai_api_key)
 
         if self.config.llm.provider == "anthropic":
             logger.info(f"✅ Final orchestrator preferring Claude: {self.config.llm.claude_model}")
-        elif self.config.llm.provider == "google":
-            logger.info(f"✅ Final orchestrator preferring Google: {self.config.llm.google_model}")
         else:
             logger.info(f"✅ Final orchestrator preferring OpenAI: {self.config.llm.openai_model}")
 
@@ -121,8 +116,6 @@ class FinalOrchestrator:
 
         if self.config.llm.provider == "anthropic":
             return self._call_claude(prompt, max_tokens)
-        elif self.config.llm.provider == "google":
-            return self._call_google(prompt, max_tokens)
         else:
             return self._call_openai(prompt, max_tokens)
 
@@ -146,27 +139,6 @@ class FinalOrchestrator:
 
         except Exception as e:
             logger.error(f"Claude API call failed: {e}")
-            raise
-
-    def _call_google(self, prompt: str, max_tokens: int = None) -> str:
-        """Call Google API for final generation"""
-        try:
-            max_tokens = max_tokens or self.config.llm.max_tokens
-
-            message = self.google_client.models.generate_content(
-                model=self.config.llm.google_model,
-                contents=prompt,
-                config=GenerateContentConfig(
-                    system_instruction=self.SYSTEM_PROMPT,
-                    max_output_tokens=max_tokens,
-                    temperature=0.3,
-                )
-            )
-
-            return message.text if message.text else ""
-
-        except Exception as e:
-            logger.error(f"Google API call failed: {e}")
             raise
 
     def _call_openai(self, prompt: str, max_tokens: int = None) -> str:

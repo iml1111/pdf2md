@@ -468,7 +468,7 @@ async def main():
     parser.add_argument(
         '--llm',
         type=str,
-        choices=['openai', 'anthropic', 'google'],
+        choices=['openai', 'anthropic'],
         default='anthropic',
         help='LLM provider to use'
     )

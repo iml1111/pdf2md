@@ -4,12 +4,11 @@ pdf2md가 연동하는 외부 서비스 목록과 구성 방식.
 
 ## 1. LLM 프로바이더
 
-3개 프로바이더를 동일 인터페이스로 지원. `utils/config.py`의 `LLMConfig.provider`로 선택.
+2개 프로바이더를 동일 인터페이스로 지원. `utils/config.py`의 `LLMConfig.provider`로 선택.
 
 | 프로바이더 | 모델 | SDK | 레이트 리밋 |
 |-----------|------|-----|-----------|
 | Anthropic | claude-sonnet-4-20250514 | `anthropic` | 5 req/s |
-| Google | gemini-2.5-flash | `google-genai` | 3 req/s |
 | OpenAI | gpt-5-2025-08-07 | `openai` | 10 req/s |
 
 **사용 위치:**
@@ -22,14 +21,14 @@ pdf2md가 연동하는 외부 서비스 목록과 구성 방식.
 
 **프로바이더별 차이점:**
 
-| 항목 | Anthropic | Google | OpenAI |
-|------|----------|--------|--------|
-| 이미지 전달 | base64 image block | `types.Part.from_bytes()` | data URL |
-| 토큰 파라미터 | `max_tokens` | `max_output_tokens` | `max_tokens` / `max_completion_tokens` (모델별) |
-| System prompt | `system` 파라미터 | `system_instruction` / config | `messages[0].role="system"` |
-| Temperature | 항상 적용 | 항상 적용 | gpt-5는 미지원 |
+| 항목 | Anthropic | OpenAI |
+|------|----------|--------|
+| 이미지 전달 | base64 image block | data URL |
+| 토큰 파라미터 | `max_tokens` | `max_tokens` / `max_completion_tokens` (모델별) |
+| System prompt | `system` 파라미터 | `messages[0].role="system"` |
+| Temperature | 항상 적용 | gpt-5는 미지원 |
 
-**Settings:** `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, `OPENAI_API_KEY`
+**Settings:** `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`
 
 ### 프롬프트 관리
 
@@ -68,7 +67,7 @@ Body (multipart):
 |-----------|------|-------------|
 | Anthropic | 5 req/s | `anthropic`, `claude` |
 | OpenAI | 10 req/s | `openai`, `gpt` |
-| Google/기타 | 3 req/s | `google`, `gemini`, 기타 |
+| 기타 | 3 req/s | 기타 |
 
 `asyncio.Lock` + `asyncio.Semaphore`로 동시성 제어.
 
@@ -77,7 +76,6 @@ Body (multipart):
 | 변수 | 필수 | 용도 |
 |------|------|------|
 | `ANTHROPIC_API_KEY` | provider=anthropic 시 | Anthropic Claude API 키 |
-| `GOOGLE_API_KEY` | provider=google 시 | Google Gemini API 키 |
 | `OPENAI_API_KEY` | provider=openai 시 | OpenAI API 키 |
 | `CLOVA_OCR_URL` | **필수** | CLOVA OCR API 엔드포인트 |
 | `CLOVA_OCR_SECRET` | **필수** | CLOVA OCR 시크릿 키 |
@@ -90,12 +88,10 @@ Body (multipart):
 
 ```python
 class LLMConfig(BaseModel):
-    provider: str           # "anthropic" | "google" | "openai"
+    provider: str           # "anthropic" | "openai"
     anthropic_api_key: str  # ANTHROPIC_API_KEY
-    google_api_key: str     # GOOGLE_API_KEY
     openai_api_key: str     # OPENAI_API_KEY
     claude_model: str       # "claude-sonnet-4-20250514"
-    google_model: str       # "gemini-2.5-flash"
     openai_model: str       # "gpt-5-2025-08-07"
     max_tokens: int         # 16384
     max_tokens_limit: int   # 128000

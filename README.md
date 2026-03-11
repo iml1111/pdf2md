@@ -8,7 +8,7 @@ A high-quality PDF to Markdown converter that uses multiple extraction engines a
 ## Key Features
 
 - **Multi-Engine Extraction**: Runs 4 specialized extractors in parallel for comprehensive text capture
-- **AI-Powered Merging**: Uses LLMs (Claude/Gemini/GPT) to intelligently merge and correct extraction results
+- **AI-Powered Merging**: Uses LLMs (Claude/GPT) to intelligently merge and correct extraction results
 - **Adaptive Merge Strategy**: Dynamically adjusts merging approach based on PDF type (native vs scanned)
 - **Multilingual Support**: Excellent support for mixed-language documents (English, Korean, Chinese, Japanese, etc.)
 - **Superior Table Extraction**: PDFPlumber-based table detection with markdown conversion
@@ -20,7 +20,7 @@ A high-quality PDF to Markdown converter that uses multiple extraction engines a
 ### Prerequisites
 
 - Python 3.11+
-- API key for at least one LLM provider (Anthropic, Google, or OpenAI)
+- API key for at least one LLM provider (Anthropic or OpenAI)
 - CLOVA OCR credentials (`CLOVA_OCR_URL`, `CLOVA_OCR_SECRET`)
 
 ### Installation
@@ -38,7 +38,6 @@ Create a `.env` file in the project root:
 ```bash
 # LLM Provider (at least one required)
 ANTHROPIC_API_KEY=sk-ant-xxxxxxxxxxxxx
-GOOGLE_API_KEY=xxxxxxxxxxxxx
 OPENAI_API_KEY=sk-xxxxxxxxxxxxx
 
 # CLOVA OCR (required)
@@ -54,9 +53,6 @@ python main.py --in document.pdf
 
 # Specify output path
 python main.py --in document.pdf --out output.md
-
-# Use Google Gemini
-python main.py --in document.pdf --llm google
 
 # Use OpenAI
 python main.py --in document.pdf --llm openai
@@ -105,7 +101,6 @@ Markdown Output
 | Provider | Model | Rate Limit | Use Case |
 |----------|-------|------------|----------|
 | Anthropic | claude-sonnet-4-20250514 | 5 req/s | Default, balanced performance |
-| Google | gemini-2.5-flash | 3 req/s | Fast, cost-effective |
 | OpenAI | gpt-5-2025-08-07 | 10 req/s | High throughput |
 
 ### Adaptive Merge Strategy
@@ -154,7 +149,7 @@ Configuration is managed via Pydantic models with environment variable defaults:
 
 | Config | Field | Default | Description |
 |--------|-------|---------|-------------|
-| LLM | `provider` | `anthropic` | LLM provider (`anthropic`/`google`/`openai`) |
+| LLM | `provider` | `anthropic` | LLM provider (`anthropic`/`openai`) |
 | LLM | `max_tokens` | `16384` | Max output tokens |
 | LLM | `temperature` | `0.1` | LLM temperature |
 | LLM | `dynamic_token_adjustment` | `true` | Auto-adjust tokens for Korean/English ratio |
@@ -169,7 +164,6 @@ Configuration is managed via Pydantic models with environment variable defaults:
 
 ### LLM Providers
 - **anthropic** >= 0.34.0 — Claude API
-- **google-genai** >= 1.0.0 — Gemini API
 - **openai** >= 1.40.0 — OpenAI API
 
 ### Infrastructure
@@ -186,4 +180,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [PyMuPDF](https://github.com/pymupdf/PyMuPDF) for PDF processing
 - [pdfplumber](https://github.com/jsvine/pdfplumber) for table extraction
 - [Naver CLOVA OCR](https://clova.ai/) for precise text recognition
-- [Anthropic](https://www.anthropic.com/), [Google](https://ai.google.dev/), and [OpenAI](https://openai.com/) for LLM APIs
+- [Anthropic](https://www.anthropic.com/) and [OpenAI](https://openai.com/) for LLM APIs

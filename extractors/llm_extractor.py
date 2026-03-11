@@ -1,5 +1,5 @@
 """
-LLM (Claude/Gemini/GPT) based multimodal image text extractor
+LLM (Claude/GPT) based multimodal image text extractor
 """
 
 import base64
@@ -9,9 +9,6 @@ from typing import Any, Dict, List
 
 from PIL import Image
 from anthropic import Anthropic
-from google import genai
-from google.genai import types
-from google.genai.types import GenerateContentConfig
 from loguru import logger
 from openai import OpenAI
 
@@ -28,7 +25,6 @@ class LLMExtractor:
         self.config = config
 
         self.anthropic_client = Anthropic(api_key=self.config.llm.anthropic_api_key)
-        self.google_client = genai.Client(api_key=self.config.llm.google_api_key)
         self.openai_client = OpenAI(api_key=self.config.llm.openai_api_key)
 
     def _resize_image_if_needed(self, image_bytes: bytes, max_dimension: int = 7999) -> bytes:
@@ -58,8 +54,6 @@ class LLMExtractor:
         """Call LLM API for image analysis"""
         if self.config.llm.provider == "anthropic":
             return self._call_claude_image(img_base64, prompt)
-        elif self.config.llm.provider == "google":
-            return self._call_google_image(image_bytes, prompt)
         else:
             return self._call_openai_image(img_base64, prompt)
 
@@ -97,34 +91,6 @@ class LLMExtractor:
 
         except Exception as e:
             logger.error(f"Claude Image API call failed: {e}")
-            return {'text': '', 'error': str(e)}
-
-    def _call_google_image(self, image_bytes: bytes, prompt: str) -> Dict[str, Any]:
-        """Call Google API for image analysis"""
-        try:
-            message = self.google_client.models.generate_content(
-                model=self.config.llm.google_model,
-                contents=[
-                    types.Part.from_bytes(
-                        data=image_bytes,
-                        mime_type="image/png",
-                    )
-                ],
-                config=GenerateContentConfig(
-                    system_instruction=prompt,
-                    max_output_tokens=self.config.llm.max_tokens,
-                    temperature=self.config.llm.temperature,
-                )
-            )
-
-            response_text = message.text if message.text else ""
-            result = self._parse_llm_response(response_text)
-            result['llm_model'] = self.config.llm.google_model
-            result['llm_provider'] = 'Gemini (Google)'
-            return result
-
-        except Exception as e:
-            logger.error(f"Google Image API call failed: {e}")
             return {'text': '', 'error': str(e)}
 
     def _call_openai_image(self, img_base64: str, prompt: str) -> Dict[str, Any]:
