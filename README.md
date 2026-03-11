@@ -21,7 +21,7 @@ A high-quality PDF to Markdown converter that uses multiple extraction engines a
 
 - Python 3.11+
 - API key for at least one LLM provider (Anthropic, Google, or OpenAI)
-- CLOVA OCR credentials (optional, for enhanced OCR)
+- CLOVA OCR credentials (`CLOVA_OCR_URL`, `CLOVA_OCR_SECRET`)
 
 ### Installation
 
@@ -41,7 +41,7 @@ ANTHROPIC_API_KEY=sk-ant-xxxxxxxxxxxxx
 GOOGLE_API_KEY=xxxxxxxxxxxxx
 OPENAI_API_KEY=sk-xxxxxxxxxxxxx
 
-# CLOVA OCR (optional)
+# CLOVA OCR (required)
 CLOVA_OCR_URL=https://your-clova-ocr-endpoint
 CLOVA_OCR_SECRET=your-secret-key
 ```
