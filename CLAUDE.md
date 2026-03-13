@@ -8,9 +8,20 @@ Python 3.11 · PyMuPDF · pdfplumber · CLOVA OCR · Anthropic/OpenAI LLM · Pyd
 
 ## 핵심 진입점
 
-- `main.py` — CLI 진입점 (argparse)
+- `main.py` — CLI 진입점 + 유스케이스 체이닝 (절차적 파이프라인)
+- `usecases/` — 유스케이스 레이어 (extraction, merging, finalizing + dataclass I/O)
 - `prompts.py` — LLM 프롬프트 중앙 관리
 - `utils/config.py` — 환경변수 설정 (Pydantic)
+
+## 아키텍처 레이어
+
+```
+main.py (CLI + 체이닝) → usecases/ (태스크 경계) → extractors/ + processors/ (순수 로직)
+```
+
+- `extractors/` — 순수 추출 로직 (PDF 파싱, OCR, LLM 호출)
+- `processors/` — 모듈 레벨 함수 (llm_merger, final_orchestrator, image_converter)
+- `usecases/` — 오케스트레이션 래퍼 (설정 주입, 에러 핸들링, dataclass I/O 변환)
 
 ## 핵심 규칙
 

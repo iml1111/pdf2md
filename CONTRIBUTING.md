@@ -35,23 +35,27 @@ pip install -r requirements.txt
 
 ```
 pdf2md/
-├── extractors/              # PDF extraction engines
+├── main.py                  # CLI entry point + usecase chaining
+├── prompts.py               # Centralized LLM prompts
+├── usecases/                # Usecase layer (task boundaries, dataclass I/O)
+│   ├── models.py                 # I/O dataclasses (PageInput, ExtractionResult, etc.)
+│   ├── extraction.py             # 4 extraction usecase functions
+│   ├── merging.py                # Per-page LLM merge usecase
+│   └── finalizing.py             # Final document generation usecase
+├── extractors/              # Pure extraction logic
 │   ├── pdfplumber_extractor.py   # Text + tables + metadata
 │   ├── pymupdf_extractor.py      # Hyperlink-only extraction
 │   ├── clova_ocr_extractor.py    # CLOVA OCR API
 │   └── llm_extractor.py          # Multimodal LLM extraction
-├── processors/              # Processing pipeline
-│   ├── single_page_pipeline.py   # Per-page orchestration
+├── processors/              # Processing logic (module-level functions)
 │   ├── llm_merger.py             # Adaptive 4-source merging
 │   ├── final_orchestrator.py     # Final markdown generation
 │   └── image_converter.py        # PDF-to-image conversion
-├── utils/                   # Utilities
-│   ├── config.py                 # Pydantic configuration
-│   ├── rate_limiter.py           # API rate limiting
-│   ├── logger.py                 # Loguru logging
-│   └── validators.py             # PDF validation
-├── prompts.py               # Centralized LLM prompts
-└── main.py                  # CLI entry point
+└── utils/                   # Utilities
+    ├── config.py                 # Pydantic configuration
+    ├── rate_limiter.py           # API rate limiting
+    ├── logger.py                 # Loguru logging
+    └── validators.py             # PDF validation
 ```
 
 ## Adding a New Extractor
@@ -69,14 +73,15 @@ class MyExtractor:
         pass
 ```
 
-3. Add the extractor to `processors/single_page_pipeline.py`
-4. Update the merge prompt in `prompts.py`
+3. Add a usecase function in `usecases/extraction.py` (async, `PageInput` → `ExtractionResult`)
+4. Add the usecase function to `main.py`'s `extract_all_for_page()` in `asyncio.gather`
+5. Update the merge prompt in `prompts.py`
 
 ## Adding a New LLM Provider
 
 1. Add API key field to `LLMConfig` in `utils/config.py`
 2. Add provider routing in `extractors/llm_extractor.py`
-3. Add provider routing in `processors/llm_merger.py` and `processors/final_orchestrator.py`
+3. Add provider routing in `processors/llm_merger.py` and `processors/final_orchestrator.py` (module-level functions)
 4. Add rate limit config in `utils/rate_limiter.py`
 
 ## Commit Messages

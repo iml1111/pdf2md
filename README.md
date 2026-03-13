@@ -115,15 +115,19 @@ The LLM Merger evaluates PDFPlumber output quality and adjusts its strategy:
 
 ```
 pdf2md/
-├── main.py                  # CLI entry point
+├── main.py                  # CLI entry point + usecase chaining
 ├── prompts.py               # Centralized LLM prompts
-├── extractors/
+├── usecases/                # Usecase layer (task boundaries, dataclass I/O)
+│   ├── models.py                  # I/O dataclasses (PageInput, ExtractionResult, etc.)
+│   ├── extraction.py              # 4 extraction usecase functions
+│   ├── merging.py                 # Per-page LLM merge usecase
+│   └── finalizing.py              # Final document generation usecase
+├── extractors/              # Pure extraction logic
 │   ├── pdfplumber_extractor.py   # Text + tables + metadata
 │   ├── pymupdf_extractor.py      # Hyperlink-only extraction
 │   ├── clova_ocr_extractor.py    # CLOVA OCR API integration
 │   └── llm_extractor.py          # Multimodal LLM extraction
-├── processors/
-│   ├── single_page_pipeline.py   # Per-page orchestration
+├── processors/              # Processing logic (module-level functions)
 │   ├── llm_merger.py             # Adaptive 4-source merging
 │   ├── final_orchestrator.py     # Final markdown generation
 │   └── image_converter.py        # PDF-to-image conversion
