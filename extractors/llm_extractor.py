@@ -63,7 +63,9 @@ class LLMExtractor:
             message = self.anthropic_client.messages.create(
                 model=self.config.llm.claude_model,
                 max_tokens=self.config.llm.max_tokens,
-                temperature=self.config.llm.temperature,
+                thinking={
+                    "type": "adaptive",
+                },
                 messages=[{
                     "role": "user",
                     "content": [
@@ -83,7 +85,11 @@ class LLMExtractor:
                 }]
             )
 
-            response_text = message.content[0].text if message.content else ""
+            response_text = ""
+            for block in message.content:
+                if block.type == "text":
+                    response_text = block.text
+                    break
             result = self._parse_llm_response(response_text)
             result['llm_model'] = self.config.llm.claude_model
             result['llm_provider'] = 'Claude (Anthropic)'
@@ -117,6 +123,7 @@ class LLMExtractor:
 
             if "gpt-5" in self.config.llm.openai_model.lower():
                 completion_params["max_completion_tokens"] = self.config.llm.max_tokens
+                completion_params["reasoning_effort"] = "high"
             else:
                 completion_params["max_tokens"] = self.config.llm.max_tokens
                 completion_params["temperature"] = self.config.llm.temperature

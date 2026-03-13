@@ -103,10 +103,15 @@ class LLMMerger:
                     self.anthropic_client.messages.create,
                     model=self.model,
                     max_tokens=8192,
-                    temperature=0.1,
+                    thinking={
+                        "type": "adaptive",
+                    },
                     messages=[{"role": "user", "content": prompt}]
                 )
-                return response.content[0].text
+                for block in response.content:
+                    if block.type == "text":
+                        return block.text
+                return ""
 
             elif self.provider == "openai":
                 completion_params = {
@@ -114,7 +119,9 @@ class LLMMerger:
                     "messages": [{"role": "user", "content": prompt}]
                 }
 
-                if "gpt-5" not in self.model.lower():
+                if "gpt-5" in self.model.lower():
+                    completion_params["reasoning_effort"] = "high"
+                else:
                     completion_params["temperature"] = 0.1
 
                 response = await asyncio.to_thread(

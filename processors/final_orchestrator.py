@@ -127,7 +127,9 @@ class FinalOrchestrator:
             message = self.anthropic_client.messages.create(
                 model=self.config.llm.claude_model,
                 max_tokens=max_tokens,
-                temperature=0.3,
+                thinking={
+                    "type": "adaptive",
+                },
                 system=self.SYSTEM_PROMPT,
                 messages=[{
                     "role": "user",
@@ -135,7 +137,10 @@ class FinalOrchestrator:
                 }]
             )
 
-            return message.content[0].text if message.content else ""
+            for block in message.content:
+                if block.type == "text":
+                    return block.text
+            return ""
 
         except Exception as e:
             logger.error(f"Claude API call failed: {e}")
@@ -159,6 +164,7 @@ class FinalOrchestrator:
 
             if "gpt-5" in self.config.llm.openai_model.lower():
                 completion_params["max_completion_tokens"] = max_tokens
+                completion_params["reasoning_effort"] = "high"
             else:
                 completion_params["max_tokens"] = max_tokens
                 completion_params["temperature"] = 0.3

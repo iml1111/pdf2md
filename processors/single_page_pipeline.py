@@ -22,20 +22,32 @@ from utils.rate_limiter import APIRateLimiters
 class SinglePagePipeline:
     """Pipeline for processing a single PDF page"""
 
-    def __init__(self, page_number: int, total_pages: int, config: Config):
+    def __init__(
+        self,
+        page_number: int,
+        total_pages: int,
+        config: Config,
+        rate_limiters: APIRateLimiters,
+        llm_extractor: LLMExtractor,
+        llm_merger: LLMMerger,
+        pymupdf_extractor: PyMuPDFExtractor,
+        pdfplumber_extractor: PDFPlumberExtractor,
+        clova_ocr_extractor: ClovaOCRExtractor,
+        image_converter: ImageConverter,
+    ):
         self.page_number: int = page_number
         self.total_pages: int = total_pages
         self.config: Config = config
 
-        self.pymupdf_extractor: PyMuPDFExtractor = PyMuPDFExtractor()
-        self.pdfplumber_extractor: PDFPlumberExtractor = PDFPlumberExtractor()
-        self.clova_ocr_extractor: ClovaOCRExtractor = ClovaOCRExtractor(self.config.clova_ocr)
-        self.llm_extractor: LLMExtractor = LLMExtractor(self.config)
+        self.pymupdf_extractor = pymupdf_extractor
+        self.pdfplumber_extractor = pdfplumber_extractor
+        self.clova_ocr_extractor = clova_ocr_extractor
+        self.llm_extractor = llm_extractor
 
-        self.image_converter: ImageConverter = ImageConverter(dpi=self.config.image_dpi)
-        self.llm_merger: LLMMerger = LLMMerger(self.config)
+        self.image_converter = image_converter
+        self.llm_merger = llm_merger
 
-        self.rate_limiters: APIRateLimiters = APIRateLimiters()
+        self.rate_limiters = rate_limiters
 
     async def process_page(self, page_pdf_bytes: bytes) -> Dict[str, Any]:
         """Process a single PDF page through all extractors"""
@@ -99,7 +111,12 @@ class SinglePagePipeline:
                     if not r.get('error')
                 )
             }
-            logger.info(f"✅ Page {self.page_number} processed in {processing_time:.2f}s")
+
+            if not merged_text.strip():
+                result['error'] = 'No content extracted after merge'
+                logger.warning(f"⚠️ Page {self.page_number} produced no content ({processing_time:.2f}s)")
+            else:
+                logger.info(f"✅ Page {self.page_number} processed in {processing_time:.2f}s")
             return result
 
         except Exception as e:

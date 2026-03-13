@@ -6,6 +6,7 @@ Main CLI interface with page-by-page processing
 
 import argparse
 import asyncio
+import logging
 import sys
 import os
 from pathlib import Path
@@ -13,6 +14,9 @@ from typing import Dict, Any, Optional, List
 import json
 import time
 import fitz  # For PDF analysis and page splitting
+
+# pdfminer FontBBox 경고 스팸 억제 (pdfplumber 내부 의존성)
+logging.getLogger('pdfminer').setLevel(logging.ERROR)
 import io
 
 # Add current directory to path for imports
@@ -23,8 +27,15 @@ from utils.logger import setup_logger, logger
 from utils.validators import validate_pdf_file
 
 # Import PDF processing modules
+from extractors.clova_ocr_extractor import ClovaOCRExtractor
+from extractors.llm_extractor import LLMExtractor
+from extractors.pdfplumber_extractor import PDFPlumberExtractor
+from extractors.pymupdf_extractor import PyMuPDFExtractor
+from processors.image_converter import ImageConverter
+from processors.llm_merger import LLMMerger
 from processors.single_page_pipeline import SinglePagePipeline
 from processors.final_orchestrator import FinalOrchestrator
+from utils.rate_limiter import APIRateLimiters
 
 
 class PDF2MDPipeline:
@@ -39,6 +50,15 @@ class PDF2MDPipeline:
         """
         self.config = config or get_config()
         self.final_orchestrator = FinalOrchestrator(self.config)
+
+        # 공유 인스턴스 (페이지 간 재사용)
+        self.rate_limiters = APIRateLimiters()
+        self.llm_extractor = LLMExtractor(self.config)
+        self.llm_merger = LLMMerger(self.config)
+        self.pymupdf_extractor = PyMuPDFExtractor()
+        self.pdfplumber_extractor = PDFPlumberExtractor()
+        self.clova_ocr_extractor = ClovaOCRExtractor(self.config.clova_ocr)
+        self.image_converter = ImageConverter(dpi=self.config.image_dpi)
 
         logger.info("✅ PDF to Markdown pipeline initialized")
     
@@ -95,7 +115,16 @@ class PDF2MDPipeline:
             Integrated page result
         """
         try:
-            single_page_pipeline = SinglePagePipeline(page_number, total_pages, self.config)
+            single_page_pipeline = SinglePagePipeline(
+                page_number, total_pages, self.config,
+                rate_limiters=self.rate_limiters,
+                llm_extractor=self.llm_extractor,
+                llm_merger=self.llm_merger,
+                pymupdf_extractor=self.pymupdf_extractor,
+                pdfplumber_extractor=self.pdfplumber_extractor,
+                clova_ocr_extractor=self.clova_ocr_extractor,
+                image_converter=self.image_converter,
+            )
             result = await single_page_pipeline.process_page(page_pdf_bytes)
             return result
         except Exception as e:
@@ -190,8 +219,11 @@ class PDF2MDPipeline:
         if not page_results:
             raise ValueError("Failed to process any pages from PDF")
         
-        successful_pages = sum(1 for r in page_results if not r.get('error'))
-        
+        successful_pages = sum(
+            1 for r in page_results
+            if not r.get('error') and len(r.get('content', '').strip()) > 0
+        )
+
         final_markdown = self.final_orchestrator.generate_final_document(
             page_results, str(pdf_path)
         )
@@ -228,7 +260,12 @@ class PDF2MDPipeline:
             ]
         }
         print(json.dumps(report, indent=2, ensure_ascii=False))
-        return str(output_file)
+
+        total_content_length = sum(len(r.get('content', '')) for r in page_results)
+        if total_content_length == 0:
+            logger.warning("⚠️ All pages produced empty content — output is fallback only")
+
+        return str(output_file), successful_pages, len(page_results)
 
 
 def main():
@@ -272,7 +309,14 @@ def main():
     config.llm.provider = args.llm
     logger.info(f"✅ Using {config.llm.provider} as LLM provider")
 
-    # Validate CLOVA OCR credentials
+    # Validate credentials
+    try:
+        config.llm.validate_credentials()
+    except ValueError as e:
+        logger.error(f"LLM 설정 오류: {e}")
+        print(f"\n❌ {e}", file=sys.stderr)
+        return 1
+
     try:
         config.clova_ocr.validate_credentials()
     except ValueError as e:
@@ -283,9 +327,17 @@ def main():
     try:
         logger.info("🚀 Initializing PDF to Markdown Pipeline...")
         pipeline = PDF2MDPipeline(config)
-        output_file = pipeline.process_pdf(args.input_pdf, args.output_path)
-        print(f"\n✅ Success! Markdown saved to: {output_file}")
-        return 0
+        output_file, successful_pages, total_pages = pipeline.process_pdf(args.input_pdf, args.output_path)
+
+        if successful_pages == 0:
+            print(f"\n❌ Failed: No pages produced content. Output saved to: {output_file}", file=sys.stderr)
+            return 1
+        elif successful_pages < total_pages:
+            print(f"\n⚠️ Partial success: {successful_pages}/{total_pages} pages extracted. Markdown saved to: {output_file}")
+            return 0
+        else:
+            print(f"\n✅ Success! Markdown saved to: {output_file}")
+            return 0
     except Exception as e:
         logger.error(f"Pipeline failed: {e}")
         print(f"\n❌ Error: {e}", file=sys.stderr)
