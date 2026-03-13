@@ -6,27 +6,41 @@ Saves all intermediate results for detailed analysis
 
 import argparse
 import asyncio
-import sys
-import os
-from pathlib import Path
-from typing import Dict, Any, Optional, List
-import json
-import time
-import fitz
 import io
-from datetime import datetime
+import json
+import sys
+import time
 import traceback
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+import fitz
+from PIL import Image
 
 # Add current directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent))
 
-from utils.config import get_config, Config
-from utils.logger import setup_logger, logger
+from processors.image_converter import ImageConverter
+from usecases.extraction import (
+    extract_clova_ocr,
+    extract_hyperlinks,
+    extract_llm_image,
+    extract_pdfplumber,
+)
+from usecases.finalizing import finalize_document
+from usecases.merging import merge_page
+from usecases.models import (
+    ExtractionResult,
+    FinalizeInput,
+    MergeInput,
+    MergeResult,
+    PageInput,
+)
+from utils.config import Config, get_config
+from utils.logger import logger, setup_logger
+from utils.rate_limiter import APIRateLimiters
 from utils.validators import validate_pdf_file
-
-# Import PDF processing modules
-from processors.single_page_pipeline import SinglePagePipeline
-from processors.final_orchestrator import FinalOrchestrator
 
 
 class DeepAnalysisPipeline:
@@ -40,7 +54,7 @@ class DeepAnalysisPipeline:
             config: Optional configuration object
         """
         self.config = config or get_config()
-        self.final_orchestrator = FinalOrchestrator(self.config)
+        self.rate_limiters = APIRateLimiters()
 
         # Create test_deep directory with timestamp
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -188,31 +202,29 @@ class DeepAnalysisPipeline:
         logger.info(f"🔄 Processing page {page_number}/{total_pages}")
 
         page_dir = f"02_page_{page_number:02d}_processing"
+        page_input = PageInput(
+            page_bytes=page_pdf,
+            page_number=page_number,
+            total_pages=total_pages,
+        )
 
         try:
-            # Initialize pipeline with config
-            pipeline = SinglePagePipeline(
-                page_number=page_number,
-                total_pages=total_pages,
-                config=self.config
-            )
-
             # Track individual extractor results
-            extractor_results = {}
+            extractor_results: Dict[str, Dict[str, Any]] = {}
 
-            # 1. Convert page to image
+            # 1. Convert page to image (for saving/debugging)
             logger.info(f"  📸 Converting page {page_number} to image...")
             start_time = time.time()
 
-            page_image_bytes = await pipeline._convert_page_to_image(page_pdf)
-            optimized_image = pipeline.image_converter.optimize_for_ocr(page_image_bytes)
+            image_converter = ImageConverter(dpi=self.config.image_dpi)
+            page_image_bytes = image_converter.convert_page_to_image(page_pdf)
+            optimized_image = image_converter.optimize_for_ocr(page_image_bytes)
 
             # Save images
             self._save_bytes(page_image_bytes, "original_image.png", page_dir)
             self._save_bytes(optimized_image, "optimized_image.png", page_dir)
 
             # Check image dimensions
-            from PIL import Image
             img = Image.open(io.BytesIO(page_image_bytes))
             img_info = {
                 "original_size": img.size,
@@ -233,92 +245,120 @@ class DeepAnalysisPipeline:
             # PyMuPDF (hyperlinks only)
             logger.info(f"  📖 Running PyMuPDF extractor (hyperlinks)...")
             start_time = time.time()
-            pymupdf_result = await pipeline._run_pymupdf(page_pdf)
+            pymupdf_result = await extract_hyperlinks(page_input)
             pymupdf_time = time.time() - start_time
-            extractor_results['pymupdf'] = {
-                'result': pymupdf_result,
-                'time': pymupdf_time,
-                'hyperlink_count': len(pymupdf_result.get('hyperlinks', []))
+            pymupdf_dict = {
+                'hyperlinks': pymupdf_result.hyperlinks or [],
+                'error': pymupdf_result.error,
             }
-            self._save_json(pymupdf_result, "pymupdf_result.json", page_dir)
-            logger.info(f"  ✅ PyMuPDF: {len(pymupdf_result.get('hyperlinks', []))} hyperlinks in {pymupdf_time:.2f}s")
+            extractor_results['pymupdf'] = {
+                'result': pymupdf_dict,
+                'time': pymupdf_time,
+                'hyperlink_count': len(pymupdf_result.hyperlinks or []),
+            }
+            self._save_json(pymupdf_dict, "pymupdf_result.json", page_dir)
+            logger.info(f"  ✅ PyMuPDF: {len(pymupdf_result.hyperlinks or [])} hyperlinks in {pymupdf_time:.2f}s")
 
             # PDFPlumber
             logger.info(f"  📖 Running PDFPlumber extractor...")
             start_time = time.time()
-            pdfplumber_result = await pipeline._run_pdfplumber(page_pdf)
+            pdfplumber_result = await extract_pdfplumber(page_input)
             pdfplumber_time = time.time() - start_time
-            extractor_results['pdfplumber'] = {
-                'result': pdfplumber_result,
-                'time': pdfplumber_time,
-                'text_length': len(pdfplumber_result.get('text', ''))
+            pdfplumber_dict = {
+                'text': pdfplumber_result.text,
+                'tables': pdfplumber_result.tables,
+                'metadata': pdfplumber_result.metadata,
+                'error': pdfplumber_result.error,
             }
-            self._save_json(pdfplumber_result, "pdfplumber_result.json", page_dir)
-            if pdfplumber_result.get('text'):
-                self._save_text(pdfplumber_result['text'], "pdfplumber_text.txt", page_dir)
-            logger.info(f"  ✅ PDFPlumber: {len(pdfplumber_result.get('text', ''))} chars in {pdfplumber_time:.2f}s")
+            extractor_results['pdfplumber'] = {
+                'result': pdfplumber_dict,
+                'time': pdfplumber_time,
+                'text_length': len(pdfplumber_result.text),
+            }
+            self._save_json(pdfplumber_dict, "pdfplumber_result.json", page_dir)
+            if pdfplumber_result.text:
+                self._save_text(pdfplumber_result.text, "pdfplumber_text.txt", page_dir)
+            logger.info(f"  ✅ PDFPlumber: {len(pdfplumber_result.text)} chars in {pdfplumber_time:.2f}s")
 
             # CLOVA OCR
             logger.info(f"  🔍 Running CLOVA OCR...")
             start_time = time.time()
-            clova_result = await pipeline._run_clova_ocr(page_pdf)
+            clova_result = await extract_clova_ocr(page_input, self.config)
             clova_time = time.time() - start_time
-            extractor_results['clova_ocr'] = {
-                'result': clova_result,
-                'time': clova_time,
-                'text_length': len(clova_result.get('text', ''))
+            clova_dict = {
+                'text': clova_result.text,
+                'error': clova_result.error,
             }
-            self._save_json(clova_result, "clova_ocr_result.json", page_dir)
-            if clova_result.get('text'):
-                self._save_text(clova_result['text'], "clova_ocr_text.txt", page_dir)
-            logger.info(f"  ✅ CLOVA OCR: {len(clova_result.get('text', ''))} chars in {clova_time:.2f}s")
+            extractor_results['clova_ocr'] = {
+                'result': clova_dict,
+                'time': clova_time,
+                'text_length': len(clova_result.text),
+            }
+            self._save_json(clova_dict, "clova_ocr_result.json", page_dir)
+            if clova_result.text:
+                self._save_text(clova_result.text, "clova_ocr_text.txt", page_dir)
+            logger.info(f"  ✅ CLOVA OCR: {len(clova_result.text)} chars in {clova_time:.2f}s")
 
             # LLM Image
             logger.info(f"  🤖 Running LLM Image extractor...")
             start_time = time.time()
-            llm_img_result = await pipeline._run_llm_image(optimized_image)
+            llm_img_result = await extract_llm_image(page_input, self.config, self.rate_limiters)
             llm_img_time = time.time() - start_time
-            extractor_results['llm_img'] = {
-                'result': llm_img_result,
-                'time': llm_img_time,
-                'text_length': len(llm_img_result.get('text', ''))
+            llm_img_dict = {
+                'text': llm_img_result.text,
+                'metadata': llm_img_result.metadata,
+                'error': llm_img_result.error,
             }
-            self._save_json(llm_img_result, "llm_img_result.json", page_dir)
-            if llm_img_result.get('text'):
-                self._save_text(llm_img_result['text'], "llm_img_text.txt", page_dir)
-            logger.info(f"  ✅ LLM Image: {len(llm_img_result.get('text', ''))} chars in {llm_img_time:.2f}s")
+            extractor_results['llm_img'] = {
+                'result': llm_img_dict,
+                'time': llm_img_time,
+                'text_length': len(llm_img_result.text),
+            }
+            self._save_json(llm_img_dict, "llm_img_result.json", page_dir)
+            if llm_img_result.text:
+                self._save_text(llm_img_result.text, "llm_img_text.txt", page_dir)
+            logger.info(f"  ✅ LLM Image: {len(llm_img_result.text)} chars in {llm_img_time:.2f}s")
 
             # 3. Merge results using LLM
             logger.info(f"  🔀 Merging extraction results...")
             start_time = time.time()
 
-            # Prepare extraction results for merger (exclude pymupdf which has no text)
-            merger_input = {}
-            for name, data in extractor_results.items():
-                if name == 'pymupdf':
-                    continue  # PyMuPDF only provides hyperlinks, not text
-                if data['result'] and not data['result'].get('error'):
-                    merger_input[name] = data['result']
+            # Build list of ExtractionResult for merge
+            all_extraction_results = [
+                pdfplumber_result,
+                clova_result,
+                llm_img_result,
+                pymupdf_result,
+            ]
 
-            merged_text = await pipeline.llm_merger.merge_text(merger_input)
+            merge_input = MergeInput(
+                page_number=page_number,
+                extraction_results=all_extraction_results,
+            )
+            merge_result = await merge_page(merge_input, self.config, self.rate_limiters)
             merge_time = time.time() - start_time
 
-            self._save_text(merged_text, "merged_text.txt", page_dir)
+            self._save_text(merge_result.merged_text, "merged_text.txt", page_dir)
             self._save_json(
-                {"merger_input": list(merger_input.keys()), "merged_length": len(merged_text)},
+                {
+                    "merger_input_extractors": [r.extractor_name for r in all_extraction_results if r.text and not r.error],
+                    "merged_length": len(merge_result.merged_text),
+                    "merge_error": merge_result.error,
+                },
                 "merge_info.json",
-                page_dir
+                page_dir,
             )
-            logger.info(f"  ✅ Merged: {len(merged_text)} chars in {merge_time:.2f}s")
+            logger.info(f"  ✅ Merged: {len(merge_result.merged_text)} chars in {merge_time:.2f}s")
 
             # 4. Build final page result
-            sources = pipeline.llm_merger.get_valid_sources(merger_input)
-            metadata = pipeline.llm_merger.extract_metadata(merger_input)
+            valid_sources = [
+                name for name, data in extractor_results.items()
+                if name != 'pymupdf' and data['result'].get('text') and not data['result'].get('error')
+            ]
 
             page_result = {
-                'content': merged_text,
-                'sources': sources,
-                'metadata': metadata,
+                'content': merge_result.merged_text,
+                'sources': valid_sources,
                 'page_number': page_number,
                 'total_pages': total_pages,
                 'successful_extractors': sum(
@@ -345,7 +385,7 @@ class DeepAnalysisPipeline:
                     }
                     for name, data in extractor_results.items()
                 },
-                'merged_text_length': len(merged_text),
+                'merged_text_length': len(merge_result.merged_text),
                 'merge_time': merge_time,
                 'total_time': sum(data['time'] for data in extractor_results.values()) + merge_time
             }
@@ -387,17 +427,27 @@ class DeepAnalysisPipeline:
 
         # 3. Process each page
         page_results = []
+        merge_results = []
         for i, page_pdf in enumerate(page_pdfs, 1):
             result = await self._process_single_page(page_pdf, i, total_pages)
             page_results.append(result)
+            merge_results.append(MergeResult(
+                page_number=i,
+                merged_text=result.get('content', ''),
+                error=result.get('error'),
+            ))
 
         # 4. Generate final markdown
         logger.info("📝 Generating final markdown document...")
         final_start = time.time()
 
-        final_markdown = self.final_orchestrator.generate_final_document(
-            page_results, str(pdf_path)
+        finalize_input = FinalizeInput(
+            merge_results=merge_results,
+            total_pages=total_pages,
+            source_file=str(pdf_path),
         )
+        finalize_result = await finalize_document(finalize_input, self.config)
+        final_markdown = finalize_result.markdown
 
         final_time = time.time() - final_start
 
@@ -493,7 +543,6 @@ async def main():
 
     except Exception as e:
         logger.error(f"Pipeline failed: {e}")
-        import traceback
         traceback.print_exc()
         return 1
 

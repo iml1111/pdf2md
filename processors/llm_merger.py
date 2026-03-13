@@ -3,7 +3,7 @@ LLM-based text merger for combining extraction results
 """
 
 import asyncio
-from typing import Any, Dict, List
+from typing import Any, Dict
 
 from anthropic import Anthropic
 from loguru import logger
@@ -13,140 +13,138 @@ from prompts import (
     format_extraction_data,
     get_llm_merge_prompt,
 )
-from utils.config import Config
-from utils.rate_limiter import APIRateLimiters
+from utils.config import LLMConfig
+from utils.rate_limiter import RateLimiter
 
 
-class LLMMerger:
-    """Text merger for combining multiple extraction results"""
+def filter_valid_results(
+    extraction_results: Dict[str, Dict[str, Any]],
+) -> Dict[str, Dict[str, Any]]:
+    """Filter out empty or error results (text-based only)"""
+    valid = {}
+    for name, result in extraction_results.items():
+        if result.get('text') and not result.get('error'):
+            valid[name] = result
+    return valid
 
-    def __init__(self, config: Config):
-        """Initialize LLM merger with all configurations"""
-        self.config: Config = config
-        self.rate_limiters: APIRateLimiters = APIRateLimiters()
 
-        self.anthropic_client = Anthropic(api_key=self.config.llm.anthropic_api_key)
-        self.openai_client = OpenAI(api_key=self.config.llm.openai_api_key)
+async def call_llm_for_merge(
+    prompt: str,
+    config: LLMConfig,
+    rate_limiter: RateLimiter,
+    anthropic_client: Anthropic,
+    openai_client: OpenAI,
+) -> str:
+    """Call LLM API with rate limiting for merging"""
+    try:
+        await rate_limiter.acquire()
 
-        self.provider: str = self.config.llm.provider
-        if self.provider == "anthropic":
-            self.model: str = self.config.llm.claude_model
-            logger.info(f"LLM Merger preferring Claude: {self.model}")
-        else:
-            self.model: str = self.config.llm.openai_model
-            logger.info(f"LLM Merger preferring OpenAI: {self.model}")
+        if config.provider == "anthropic":
+            response = await asyncio.to_thread(
+                anthropic_client.messages.create,
+                model=config.claude_model,
+                max_tokens=8192,
+                thinking={"type": "adaptive"},
+                messages=[{"role": "user", "content": prompt}],
+            )
+            for block in response.content:
+                if block.type == "text":
+                    return block.text
+            return ""
 
-    async def merge_text(self, extraction_results: Dict[str, Dict[str, Any]]) -> str:
-        """Merge text from multiple extractors using LLM intelligence"""
-        if not extraction_results:
-            return ''
+        elif config.provider == "openai":
+            completion_params = {
+                "model": config.openai_model,
+                "messages": [{"role": "user", "content": prompt}],
+            }
+            if "gpt-5" in config.openai_model.lower():
+                completion_params["reasoning_effort"] = "high"
+            else:
+                completion_params["temperature"] = 0.1
 
-        # Filter text results (excludes PyMuPDF which only has hyperlinks)
-        valid_results = self._filter_valid_results(extraction_results)
+            response = await asyncio.to_thread(
+                openai_client.chat.completions.create,
+                **completion_params,
+            )
+            return response.choices[0].message.content
 
-        if not valid_results and 'pymupdf' not in extraction_results:
-            logger.warning("No valid extraction results to merge")
-            return ''
+    except Exception as e:
+        logger.error(f"LLM merge failed: {e}")
+        return fallback_merge(prompt)
 
-        if len(valid_results) == 1 and 'pymupdf' not in extraction_results:
-            result = next(iter(valid_results.values()))
-            return result.get('text', '')
 
-        # Include PyMuPDF hyperlink data for format_extraction_data()
-        all_results_for_format = dict(valid_results)
-        if 'pymupdf' in extraction_results:
-            all_results_for_format['pymupdf'] = extraction_results['pymupdf']
+def fallback_merge(prompt: str) -> str:
+    """Fallback merge when LLM is unavailable"""
+    lines = prompt.split('\n')
+    in_extraction = False
+    texts = []
 
-        extraction_data = format_extraction_data(all_results_for_format)
-        prompt = get_llm_merge_prompt(extraction_data)
-        merged_text = await self._call_llm_for_merge(prompt)
+    for line in lines:
+        if '=== ' in line and 'EXTRACTION ===' in line:
+            in_extraction = True
+            continue
+        elif line.startswith('IMPORTANT INSTRUCTIONS:'):
+            break
+        elif in_extraction and line.strip():
+            texts.append(line)
 
-        return merged_text
+    return '\n'.join(texts)
 
-    def extract_metadata(self, extraction_results: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
-        """Extract and combine metadata from extraction results"""
-        valid_results = self._filter_valid_results(extraction_results)
 
-        metadata = {
-            'extractors_used': list(valid_results.keys()),
-            'extraction_details': {}
-        }
+async def merge_text(
+    extraction_results: Dict[str, Dict[str, Any]],
+    config: LLMConfig,
+    rate_limiter: RateLimiter,
+    anthropic_client: Anthropic,
+    openai_client: OpenAI,
+) -> str:
+    """Merge text from multiple extractors using LLM intelligence"""
+    if not extraction_results:
+        return ''
 
-        for name, result in valid_results.items():
-            if result.get('metadata'):
-                metadata['extraction_details'][name] = result['metadata']
+    valid_results = filter_valid_results(extraction_results)
 
-        return metadata
+    if not valid_results and 'pymupdf' not in extraction_results:
+        logger.warning("No valid extraction results to merge")
+        return ''
 
-    def get_valid_sources(self, extraction_results: Dict[str, Dict[str, Any]]) -> List[str]:
-        """Get list of valid extraction sources"""
-        valid_results = self._filter_valid_results(extraction_results)
-        return list(valid_results.keys())
+    if len(valid_results) == 1 and 'pymupdf' not in extraction_results:
+        result = next(iter(valid_results.values()))
+        return result.get('text', '')
 
-    def _filter_valid_results(self, extraction_results: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
-        """Filter out empty or error results"""
-        valid_results = {}
-        for name, result in extraction_results.items():
-            if result.get('text') and not result.get('error'):
-                valid_results[name] = result
-        return valid_results
+    all_results_for_format = dict(valid_results)
+    if 'pymupdf' in extraction_results:
+        all_results_for_format['pymupdf'] = extraction_results['pymupdf']
 
-    async def _call_llm_for_merge(self, prompt: str) -> str:
-        """Call LLM API with rate limiting for merging"""
-        limiter = self.rate_limiters.get_limiter(self.provider)
+    extraction_data = format_extraction_data(all_results_for_format)
+    prompt = get_llm_merge_prompt(extraction_data)
+    merged_text = await call_llm_for_merge(
+        prompt, config, rate_limiter, anthropic_client, openai_client,
+    )
 
-        try:
-            await limiter.acquire()
+    return merged_text
 
-            if self.provider == "anthropic":
-                response = await asyncio.to_thread(
-                    self.anthropic_client.messages.create,
-                    model=self.model,
-                    max_tokens=8192,
-                    thinking={
-                        "type": "adaptive",
-                    },
-                    messages=[{"role": "user", "content": prompt}]
-                )
-                for block in response.content:
-                    if block.type == "text":
-                        return block.text
-                return ""
 
-            elif self.provider == "openai":
-                completion_params = {
-                    "model": self.model,
-                    "messages": [{"role": "user", "content": prompt}]
-                }
+def extract_metadata(
+    extraction_results: Dict[str, Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Extract and combine metadata from extraction results"""
+    valid_results = filter_valid_results(extraction_results)
 
-                if "gpt-5" in self.model.lower():
-                    completion_params["reasoning_effort"] = "high"
-                else:
-                    completion_params["temperature"] = 0.1
+    metadata = {
+        'extractors_used': list(valid_results.keys()),
+        'extraction_details': {},
+    }
 
-                response = await asyncio.to_thread(
-                    self.openai_client.chat.completions.create,
-                    **completion_params
-                )
-                return response.choices[0].message.content
+    for name, result in valid_results.items():
+        if result.get('metadata'):
+            metadata['extraction_details'][name] = result['metadata']
 
-        except Exception as e:
-            logger.error(f"LLM merge failed: {e}")
-            return self._fallback_merge(prompt)
+    return metadata
 
-    def _fallback_merge(self, prompt: str) -> str:
-        """Fallback merge when LLM is unavailable"""
-        lines = prompt.split('\n')
-        in_extraction = False
-        texts = []
 
-        for line in lines:
-            if '=== ' in line and 'EXTRACTION ===' in line:
-                in_extraction = True
-                continue
-            elif line.startswith('IMPORTANT INSTRUCTIONS:'):
-                break
-            elif in_extraction and line.strip():
-                texts.append(line)
-
-        return '\n'.join(texts)
+def get_valid_sources(
+    extraction_results: Dict[str, Dict[str, Any]],
+) -> list[str]:
+    """Get list of valid extraction sources"""
+    return list(filter_valid_results(extraction_results).keys())

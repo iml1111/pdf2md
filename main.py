@@ -6,306 +6,199 @@ Main CLI interface with page-by-page processing
 
 import argparse
 import asyncio
+import itertools
+import json
 import logging
 import sys
-import os
-from pathlib import Path
-from typing import Dict, Any, Optional, List
-import json
 import time
-import fitz  # For PDF analysis and page splitting
+from pathlib import Path
+from typing import Any, Dict, List
+
+import fitz
 
 # pdfminer FontBBox 경고 스팸 억제 (pdfplumber 내부 의존성)
 logging.getLogger('pdfminer').setLevel(logging.ERROR)
-import io
 
-# Add current directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent))
 
-from utils.config import get_config, Config
-from utils.logger import setup_logger, logger
+from usecases.extraction import (
+    extract_clova_ocr,
+    extract_hyperlinks,
+    extract_llm_image,
+    extract_pdfplumber,
+)
+from usecases.finalizing import finalize_document
+from usecases.merging import merge_page
+from usecases.models import (
+    ExtractionResult,
+    FinalizeInput,
+    MergeInput,
+    PageInput,
+)
+from utils.config import Config, get_config
+from utils.logger import logger, setup_logger
+from utils.rate_limiter import APIRateLimiters
 from utils.validators import validate_pdf_file
 
-# Import PDF processing modules
-from extractors.clova_ocr_extractor import ClovaOCRExtractor
-from extractors.llm_extractor import LLMExtractor
-from extractors.pdfplumber_extractor import PDFPlumberExtractor
-from extractors.pymupdf_extractor import PyMuPDFExtractor
-from processors.image_converter import ImageConverter
-from processors.llm_merger import LLMMerger
-from processors.single_page_pipeline import SinglePagePipeline
-from processors.final_orchestrator import FinalOrchestrator
-from utils.rate_limiter import APIRateLimiters
+
+def batched(iterable, n):
+    """itertools.batched polyfill for Python 3.11"""
+    it = iter(iterable)
+    while True:
+        batch = list(itertools.islice(it, n))
+        if not batch:
+            break
+        yield batch
 
 
-class PDF2MDPipeline:
-    """PDF to Markdown conversion pipeline"""
-    
-    def __init__(self, config: Optional[Config] = None):
-        """
-        Initialize the PDF to Markdown pipeline
-        
-        Args:
-            config: Optional configuration object
-        """
-        self.config = config or get_config()
-        self.final_orchestrator = FinalOrchestrator(self.config)
+def split_pdf(pdf_path: str) -> List[bytes]:
+    """Split PDF into individual page bytes"""
+    page_pdfs = []
+    try:
+        doc = fitz.open(pdf_path)
+        for page_num in range(doc.page_count):
+            single_page_doc = fitz.open()
+            single_page_doc.insert_pdf(doc, from_page=page_num, to_page=page_num)
+            page_pdfs.append(single_page_doc.tobytes())
+            single_page_doc.close()
+        doc.close()
+        logger.info(f"✅ Successfully split PDF into {len(page_pdfs)} pages")
+    except Exception as e:
+        logger.error(f"Failed to split PDF: {e}")
+        raise
+    return page_pdfs
 
-        # 공유 인스턴스 (페이지 간 재사용)
-        self.rate_limiters = APIRateLimiters()
-        self.llm_extractor = LLMExtractor(self.config)
-        self.llm_merger = LLMMerger(self.config)
-        self.pymupdf_extractor = PyMuPDFExtractor()
-        self.pdfplumber_extractor = PDFPlumberExtractor()
-        self.clova_ocr_extractor = ClovaOCRExtractor(self.config.clova_ocr)
-        self.image_converter = ImageConverter(dpi=self.config.image_dpi)
 
-        logger.info("✅ PDF to Markdown pipeline initialized")
-    
-    def _split_pdf_into_pages(self, pdf_path: str) -> List[bytes]:
-        """
-        Split PDF into individual page PDFs
-        
-        Args:
-            pdf_path: Path to PDF file
-            
-        Returns:
-            List of PDF bytes, one for each page
-        """
-        page_pdfs = []
-        
-        try:
-            doc = fitz.open(pdf_path)
-            total_pages = doc.page_count
-            
-            for page_num in range(total_pages):
-                single_page_doc = fitz.open()
-                single_page_doc.insert_pdf(doc, from_page=page_num, to_page=page_num)
-                
-                # Convert to bytes
-                pdf_bytes = single_page_doc.tobytes()
-                page_pdfs.append(pdf_bytes)
-                
-                single_page_doc.close()
-            
-            doc.close()
-            logger.info(f"✅ Successfully split PDF into {len(page_pdfs)} pages")
-            
-        except Exception as e:
-            logger.error(f"Failed to split PDF: {e}")
-            raise
-        
-        return page_pdfs
-    
-    async def process_single_page(
-        self,
-        page_pdf_bytes: bytes,
-        page_number: int,
-        total_pages: int
-    ) -> Dict[str, Any]:
-        """
-        Process a single PDF page through the pipeline
-        
-        Args:
-            page_pdf_bytes: PDF bytes for single page
-            page_number: Current page number (1-indexed)
-            total_pages: Total number of pages
-            
-        Returns:
-            Integrated page result
-        """
-        try:
-            single_page_pipeline = SinglePagePipeline(
-                page_number, total_pages, self.config,
-                rate_limiters=self.rate_limiters,
-                llm_extractor=self.llm_extractor,
-                llm_merger=self.llm_merger,
-                pymupdf_extractor=self.pymupdf_extractor,
-                pdfplumber_extractor=self.pdfplumber_extractor,
-                clova_ocr_extractor=self.clova_ocr_extractor,
-                image_converter=self.image_converter,
+async def extract_all_for_page(
+    page: PageInput,
+    config: Config,
+    rate_limiters: APIRateLimiters,
+) -> List[ExtractionResult]:
+    """Run all 4 extractors in parallel for a single page"""
+    results = await asyncio.gather(
+        extract_pdfplumber(page),
+        extract_clova_ocr(page, config),
+        extract_llm_image(page, config, rate_limiters),
+        extract_hyperlinks(page),
+        return_exceptions=True,
+    )
+
+    # Convert exceptions to error ExtractionResults + diagnostic logging
+    extraction_results = []
+    extractor_names = ["pdfplumber", "clova_ocr", "llm_img", "pymupdf"]
+    for name, result in zip(extractor_names, results):
+        if isinstance(result, Exception):
+            logger.error(f"❌ Page {page.page_number} - {name}: {result}")
+            extraction_results.append(
+                ExtractionResult(extractor_name=name, text="", error=str(result))
             )
-            result = await single_page_pipeline.process_page(page_pdf_bytes)
-            return result
-        except Exception as e:
-            logger.error(f"Failed to process page {page_number}: {e}")
-            return {
-                'page_number': page_number,
-                'content': '',
-                'error': str(e)
-            }
-    
-    async def process_pdf_pages(self, pdf_path: str) -> List[Dict[str, Any]]:
-        """
-        Process all PDF pages in parallel batches
-        
-        Args:
-            pdf_path: Path to PDF file
-            
-        Returns:
-            List of integrated page results
-        """
-        # Split PDF into pages
-        page_pdfs = self._split_pdf_into_pages(pdf_path)
-        total_pages = len(page_pdfs)
-        
-        if total_pages == 0:
-            logger.error("No pages found in PDF")
-            return []
-        
-        logger.info(f"🚀 Processing {total_pages} pages with PDF to Markdown pipeline")
-        
-        # Dynamic batch size based on total pages and memory considerations
-        if total_pages <= 10:
-            batch_size = total_pages  # Process all at once for small PDFs
         else:
-            batch_size = 10  # Process 10 pages at a time for large PDFs
-        
-        page_results = []
-        for batch_start in range(0, total_pages, batch_size):
-            batch_end = min(batch_start + batch_size, total_pages)
-            batch_tasks = []
-            
-            logger.info(f"📦 Processing batch: pages {batch_start + 1} to {batch_end}")
-            
-            for i in range(batch_start, batch_end):
-                page_number = i + 1  # 1-indexed
-                page_pdf_bytes = page_pdfs[i]
-                
-                # Create task for page processing
-                task = self.process_single_page(page_pdf_bytes, page_number, total_pages)
-                batch_tasks.append((page_number, task))
-            
-            # Process batch in parallel
-            if batch_tasks:
-                task_results = await asyncio.gather(*[task for _, task in batch_tasks])
-                
-                for (page_num, _), result in zip(batch_tasks, task_results):
-                    page_results.append(result)
-                
-                logger.info(f"✅ Batch complete: {len(task_results)} pages processed")
-        
-        # Sort results by page number to ensure correct order
-        page_results.sort(key=lambda x: x.get('page_number', 0))
-        
-        return page_results
-    
-    def process_pdf(self, pdf_path: str, output_path: Optional[str] = None) -> str:
-        """
-        Main entry point for PDF to Markdown conversion
-        
-        Args:
-            pdf_path: Path to input PDF
-            output_path: Optional output path for markdown
-            
-        Returns:
-            Path to generated markdown file
-        """
-        # Validate PDF
-        pdf_path = Path(pdf_path)
-        is_valid = validate_pdf_file(str(pdf_path))
-        if not is_valid:
-            raise ValueError("PDF validation failed")
-        
-        start_time = time.time()
-        
-        # Process all pages
-        try:
-            loop = asyncio.get_running_loop()
-            page_results = loop.run_until_complete(self.process_pdf_pages(str(pdf_path)))
-        except RuntimeError:
-            page_results = asyncio.run(self.process_pdf_pages(str(pdf_path)))
-        
-        if not page_results:
-            raise ValueError("Failed to process any pages from PDF")
-        
-        successful_pages = sum(
-            1 for r in page_results
-            if not r.get('error') and len(r.get('content', '').strip()) > 0
+            if result.error:
+                logger.warning(
+                    f"⚠️ Page {page.page_number} - {result.extractor_name}: {result.error}"
+                )
+            extraction_results.append(result)
+
+    return extraction_results
+
+
+async def run_pipeline(
+    pdf_path: Path,
+    config: Config,
+) -> Dict[str, Any]:
+    """Main pipeline logic: extract → merge → finalize"""
+    start_time = time.time()
+    rate_limiters = APIRateLimiters()
+
+    # --- Step 0: Split PDF ---
+    page_bytes_list = split_pdf(str(pdf_path))
+    total_pages = len(page_bytes_list)
+
+    if total_pages == 0:
+        raise ValueError("No pages found in PDF")
+
+    pages = [
+        PageInput(page_bytes=b, page_number=i + 1, total_pages=total_pages)
+        for i, b in enumerate(page_bytes_list)
+    ]
+
+    logger.info(f"🚀 Processing {total_pages} pages with PDF to Markdown pipeline")
+
+    # --- Step 1: Extract (per-page parallel, batched) ---
+    all_extractions: List[List[ExtractionResult]] = []
+    batch_size = total_pages if total_pages <= 10 else 10
+
+    for batch in batched(pages, batch_size):
+        logger.info(
+            f"📦 Processing batch: pages {batch[0].page_number} to {batch[-1].page_number}"
         )
+        batch_results = await asyncio.gather(*[
+            extract_all_for_page(page, config, rate_limiters)
+            for page in batch
+        ])
+        all_extractions.extend(batch_results)
+        logger.info(f"✅ Batch complete: {len(batch_results)} pages processed")
 
-        final_markdown = self.final_orchestrator.generate_final_document(
-            page_results, str(pdf_path)
+    # --- Step 2: Merge (per-page) ---
+    merge_results = []
+    for page_input, extractions in zip(pages, all_extractions):
+        result = await merge_page(
+            MergeInput(
+                page_number=page_input.page_number,
+                extraction_results=extractions,
+            ),
+            config,
+            rate_limiters,
         )
-        
-        # Determine output path
-        if output_path:
-            output_file = Path(output_path)
-        else:
-            output_file = pdf_path.with_suffix('.md')
-        
-        # Save markdown
-        output_file.write_text(final_markdown, encoding='utf-8')
-        
-        # Calculate processing time & log summary
-        processing_time = time.time() - start_time
-        logger.info("✨ Processing Complete!")
-        logger.info(f"⏱️ Processing time: {processing_time:.2f} seconds")
-        
-        # Output processing report to stdout instead of saving to file
-        report = {
-            'pdf_path': str(pdf_path),
-            'output_path': str(output_file),
-            'processing_time': processing_time,
-            'total_pages': len(page_results),
-            'successful_pages': successful_pages,
-            'page_results': [
-                {
-                    'page_number': r.get('page_number'),
-                    'has_error': bool(r.get('error')),
-                    'error': r.get('error'),
-                    'content_length': len(r.get('content', ''))
-                }
-                for r in page_results
-            ]
-        }
-        print(json.dumps(report, indent=2, ensure_ascii=False))
+        merge_results.append(result)
 
-        total_content_length = sum(len(r.get('content', '')) for r in page_results)
-        if total_content_length == 0:
-            logger.warning("⚠️ All pages produced empty content — output is fallback only")
+    # --- Step 3: Finalize ---
+    final = await finalize_document(
+        FinalizeInput(
+            merge_results=merge_results,
+            total_pages=total_pages,
+            source_file=pdf_path.name,
+        ),
+        config,
+    )
 
-        return str(output_file), successful_pages, len(page_results)
+    processing_time = time.time() - start_time
+
+    return {
+        'final': final,
+        'merge_results': merge_results,
+        'total_pages': total_pages,
+        'processing_time': processing_time,
+    }
 
 
-def main():
-    """Main CLI entry point for PDF to Markdown pipeline"""
+def parse_args():
+    """Parse CLI arguments"""
     parser = argparse.ArgumentParser(
         description="PDF to Markdown Conversion Pipeline",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-        Examples: python main.py --in document.pdf --out output.md
-        """
+        epilog="Examples: python main.py --in document.pdf --out output.md",
     )
-    
     parser.add_argument(
-        '--in', '-i',
-        dest='input_pdf',
-        type=str,
-        required=True,
-        help='Input PDF file path'
+        '--in', '-i', dest='input_pdf', type=str, required=True,
+        help='Input PDF file path',
     )
-    
     parser.add_argument(
-        '--out', '-o',
-        dest='output_path',
-        type=str,
-        help='Output markdown file path (default: same as input with .md extension)'
+        '--out', '-o', dest='output_path', type=str,
+        help='Output markdown file path (default: same as input with .md extension)',
     )
-    
     parser.add_argument(
-        '--llm',
-        type=str,
-        choices=['openai', 'anthropic'],
-        default='anthropic',
-        help='LLM provider to use '
+        '--llm', type=str, choices=['openai', 'anthropic'], default='anthropic',
+        help='LLM provider to use',
     )
-    
-    args = parser.parse_args()
-    
+    return parser.parse_args()
+
+
+def main():
+    """CLI entry point"""
+    args = parse_args()
     setup_logger(level="INFO")
     config = get_config()
-    
     config.llm.provider = args.llm
     logger.info(f"✅ Using {config.llm.provider} as LLM provider")
 
@@ -325,19 +218,82 @@ def main():
         return 1
 
     try:
-        logger.info("🚀 Initializing PDF to Markdown Pipeline...")
-        pipeline = PDF2MDPipeline(config)
-        output_file, successful_pages, total_pages = pipeline.process_pdf(args.input_pdf, args.output_path)
+        # Validate PDF
+        pdf_path = Path(args.input_pdf)
+        is_valid = validate_pdf_file(str(pdf_path))
+        if not is_valid:
+            raise ValueError("PDF validation failed")
 
+        logger.info("🚀 Initializing PDF to Markdown Pipeline...")
+
+        # Run pipeline
+        pipeline_result = asyncio.run(run_pipeline(pdf_path, config))
+
+        final = pipeline_result['final']
+        merge_results = pipeline_result['merge_results']
+        total_pages = pipeline_result['total_pages']
+        processing_time = pipeline_result['processing_time']
+
+        # Write output
+        if args.output_path:
+            output_file = Path(args.output_path)
+        else:
+            output_file = pdf_path.with_suffix('.md')
+
+        output_file.write_text(final.markdown, encoding='utf-8')
+
+        # Calculate stats
+        successful_pages = sum(
+            1 for mr in merge_results
+            if not mr.error and mr.merged_text.strip()
+        )
+
+        # Log summary
+        logger.info("✨ Processing Complete!")
+        logger.info(f"⏱️ Processing time: {processing_time:.2f} seconds")
+
+        # JSON report to stdout
+        report = {
+            'pdf_path': str(pdf_path),
+            'output_path': str(output_file),
+            'processing_time': processing_time,
+            'total_pages': total_pages,
+            'successful_pages': successful_pages,
+            'page_results': [
+                {
+                    'page_number': mr.page_number,
+                    'has_error': bool(mr.error),
+                    'error': mr.error,
+                    'content_length': len(mr.merged_text),
+                }
+                for mr in merge_results
+            ],
+        }
+        print(json.dumps(report, indent=2, ensure_ascii=False))
+
+        total_content_length = sum(len(mr.merged_text) for mr in merge_results)
+        if total_content_length == 0:
+            logger.warning(
+                "⚠️ All pages produced empty content — output is fallback only"
+            )
+
+        # Exit codes
         if successful_pages == 0:
-            print(f"\n❌ Failed: No pages produced content. Output saved to: {output_file}", file=sys.stderr)
+            print(
+                f"\n❌ Failed: No pages produced content. Output saved to: {output_file}",
+                file=sys.stderr,
+            )
             return 1
         elif successful_pages < total_pages:
-            print(f"\n⚠️ Partial success: {successful_pages}/{total_pages} pages extracted. Markdown saved to: {output_file}")
+            print(
+                f"\n⚠️ Partial success: {successful_pages}/{total_pages} pages extracted."
+                f" Markdown saved to: {output_file}"
+            )
             return 0
         else:
             print(f"\n✅ Success! Markdown saved to: {output_file}")
             return 0
+
     except Exception as e:
         logger.error(f"Pipeline failed: {e}")
         print(f"\n❌ Error: {e}", file=sys.stderr)
