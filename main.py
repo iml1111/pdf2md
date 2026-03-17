@@ -37,7 +37,6 @@ from usecases.models import (
 )
 from utils.config import Config, get_config
 from utils.logger import logger, setup_logger
-from utils.rate_limiter import APIRateLimiters
 from utils.validators import validate_pdf_file
 
 
@@ -72,13 +71,12 @@ def split_pdf(pdf_path: str) -> List[bytes]:
 async def extract_all_for_page(
     page: PageInput,
     config: Config,
-    rate_limiters: APIRateLimiters,
 ) -> List[ExtractionResult]:
     """Run all 4 extractors in parallel for a single page"""
     results = await asyncio.gather(
         extract_pdfplumber(page),
         extract_clova_ocr(page, config),
-        extract_llm_image(page, config, rate_limiters),
+        extract_llm_image(page, config),
         extract_hyperlinks(page),
         return_exceptions=True,
     )
@@ -108,7 +106,6 @@ async def run_pipeline(
 ) -> Dict[str, Any]:
     """Main pipeline logic: extract → merge → finalize"""
     start_time = time.time()
-    rate_limiters = APIRateLimiters()
 
     # --- Step 0: Split PDF ---
     page_bytes_list = split_pdf(str(pdf_path))
@@ -133,7 +130,7 @@ async def run_pipeline(
             f"📦 Processing batch: pages {batch[0].page_number} to {batch[-1].page_number}"
         )
         batch_results = await asyncio.gather(*[
-            extract_all_for_page(page, config, rate_limiters)
+            extract_all_for_page(page, config)
             for page in batch
         ])
         all_extractions.extend(batch_results)
@@ -148,7 +145,6 @@ async def run_pipeline(
                 extraction_results=extractions,
             ),
             config,
-            rate_limiters,
         )
         merge_results.append(result)
 

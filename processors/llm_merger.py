@@ -14,7 +14,6 @@ from prompts import (
     get_llm_merge_prompt,
 )
 from utils.config import LLMConfig
-from utils.rate_limiter import RateLimiter
 
 
 def filter_valid_results(
@@ -31,14 +30,11 @@ def filter_valid_results(
 async def call_llm_for_merge(
     prompt: str,
     config: LLMConfig,
-    rate_limiter: RateLimiter,
     anthropic_client: Anthropic,
     openai_client: OpenAI,
 ) -> str:
-    """Call LLM API with rate limiting for merging"""
+    """Call LLM API for merging"""
     try:
-        await rate_limiter.acquire()
-
         if config.provider == "anthropic":
             response = await asyncio.to_thread(
                 anthropic_client.messages.create,
@@ -94,7 +90,6 @@ def fallback_merge(prompt: str) -> str:
 async def merge_text(
     extraction_results: Dict[str, Dict[str, Any]],
     config: LLMConfig,
-    rate_limiter: RateLimiter,
     anthropic_client: Anthropic,
     openai_client: OpenAI,
 ) -> str:
@@ -119,7 +114,7 @@ async def merge_text(
     extraction_data = format_extraction_data(all_results_for_format)
     prompt = get_llm_merge_prompt(extraction_data)
     merged_text = await call_llm_for_merge(
-        prompt, config, rate_limiter, anthropic_client, openai_client,
+        prompt, config, anthropic_client, openai_client,
     )
 
     return merged_text

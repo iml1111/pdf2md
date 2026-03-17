@@ -12,7 +12,6 @@ from extractors.pymupdf_extractor import PyMuPDFExtractor
 from processors.image_converter import ImageConverter
 from usecases.models import ExtractionResult, PageInput
 from utils.config import Config
-from utils.rate_limiter import APIRateLimiters
 
 
 async def extract_pdfplumber(page_input: PageInput) -> ExtractionResult:
@@ -96,7 +95,6 @@ async def extract_clova_ocr(
 async def extract_llm_image(
     page_input: PageInput,
     config: Config,
-    rate_limiters: APIRateLimiters,
 ) -> ExtractionResult:
     """LLM 멀티모달 비전 추출"""
     try:
@@ -107,10 +105,8 @@ async def extract_llm_image(
         )
         optimized_image = image_converter.optimize_for_ocr(page_image_bytes)
 
-        # Rate limit and call LLM
+        # Call LLM
         extractor = LLMExtractor(config)
-        limiter = rate_limiters.get_limiter(config.llm.provider)
-        await limiter.acquire()
 
         result = await asyncio.wait_for(
             asyncio.to_thread(

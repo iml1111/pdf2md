@@ -39,7 +39,6 @@ from usecases.models import (
 )
 from utils.config import Config, get_config
 from utils.logger import logger, setup_logger
-from utils.rate_limiter import APIRateLimiters
 from utils.validators import validate_pdf_file
 
 
@@ -54,7 +53,6 @@ class DeepAnalysisPipeline:
             config: Optional configuration object
         """
         self.config = config or get_config()
-        self.rate_limiters = APIRateLimiters()
 
         # Create test_deep directory with timestamp
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -302,7 +300,7 @@ class DeepAnalysisPipeline:
             # LLM Image
             logger.info(f"  🤖 Running LLM Image extractor...")
             start_time = time.time()
-            llm_img_result = await extract_llm_image(page_input, self.config, self.rate_limiters)
+            llm_img_result = await extract_llm_image(page_input, self.config)
             llm_img_time = time.time() - start_time
             llm_img_dict = {
                 'text': llm_img_result.text,
@@ -335,7 +333,7 @@ class DeepAnalysisPipeline:
                 page_number=page_number,
                 extraction_results=all_extraction_results,
             )
-            merge_result = await merge_page(merge_input, self.config, self.rate_limiters)
+            merge_result = await merge_page(merge_input, self.config)
             merge_time = time.time() - start_time
 
             self._save_text(merge_result.merged_text, "merged_text.txt", page_dir)
