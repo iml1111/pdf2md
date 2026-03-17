@@ -29,7 +29,6 @@ from usecases.extraction import (
 from usecases.finalizing import finalize_document
 from usecases.merging import merge_page
 from usecases.models import (
-    ExtractionResult,
     FinalizeInput,
     MergeInput,
     PageInput,
@@ -57,38 +56,6 @@ def split_pdf(pdf_path: str) -> List[bytes]:
     return page_pdfs
 
 
-async def extract_all_for_page(
-    page: PageInput,
-    config: Config,
-) -> List[ExtractionResult]:
-    """Run all 4 extractors in parallel for a single page"""
-    results = await asyncio.gather(
-        extract_pdfplumber(page),
-        extract_clova_ocr(page, config),
-        extract_llm_image(page, config),
-        extract_hyperlinks(page),
-        return_exceptions=True,
-    )
-
-    # Convert exceptions to error ExtractionResults + diagnostic logging
-    extraction_results = []
-    extractor_names = ["pdfplumber", "clova_ocr", "llm_img", "pymupdf"]
-    for name, result in zip(extractor_names, results):
-        if isinstance(result, Exception):
-            logger.error(f"❌ Page {page.page_number} - {name}: {result}")
-            extraction_results.append(
-                ExtractionResult(extractor_name=name, text="", error=str(result))
-            )
-        else:
-            if result.error:
-                logger.warning(
-                    f"⚠️ Page {page.page_number} - {result.extractor_name}: {result.error}"
-                )
-            extraction_results.append(result)
-
-    return extraction_results
-
-
 async def run_pipeline(
     pdf_path: Path,
     config: Config,
@@ -110,11 +77,23 @@ async def run_pipeline(
 
     logger.info(f"🚀 Processing {total_pages} pages with PDF to Markdown pipeline")
 
-    # --- Step 1: Extract (per-page parallel) ---
-    all_extractions = await asyncio.gather(*[
-        extract_all_for_page(page, config)
-        for page in pages
-    ])
+    # --- Step 1: Extract (per-page sequential, extractors parallel) ---
+    all_extractions = []
+    for page in pages:
+        results = await asyncio.gather(
+            extract_pdfplumber(page),
+            extract_clova_ocr(page, config),
+            extract_llm_image(page, config),
+            extract_hyperlinks(page),
+        )
+        page_results = []
+        for result in results:
+            if result.error:
+                raise RuntimeError(
+                    f"Page {page.page_number} - {result.extractor_name}: {result.error}"
+                )
+            page_results.append(result)
+        all_extractions.append(page_results)
 
     # --- Step 2: Merge (per-page) ---
     merge_results = []
