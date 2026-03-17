@@ -6,7 +6,6 @@ Main CLI interface with page-by-page processing
 
 import argparse
 import asyncio
-import itertools
 import json
 import logging
 import sys
@@ -38,16 +37,6 @@ from usecases.models import (
 from utils.config import Config, get_config
 from utils.logger import logger, setup_logger
 from utils.validators import validate_pdf_file
-
-
-def batched(iterable, n):
-    """itertools.batched polyfill for Python 3.11"""
-    it = iter(iterable)
-    while True:
-        batch = list(itertools.islice(it, n))
-        if not batch:
-            break
-        yield batch
 
 
 def split_pdf(pdf_path: str) -> List[bytes]:
@@ -121,20 +110,11 @@ async def run_pipeline(
 
     logger.info(f"🚀 Processing {total_pages} pages with PDF to Markdown pipeline")
 
-    # --- Step 1: Extract (per-page parallel, batched) ---
-    all_extractions: List[List[ExtractionResult]] = []
-    batch_size = total_pages if total_pages <= 10 else 10
-
-    for batch in batched(pages, batch_size):
-        logger.info(
-            f"📦 Processing batch: pages {batch[0].page_number} to {batch[-1].page_number}"
-        )
-        batch_results = await asyncio.gather(*[
-            extract_all_for_page(page, config)
-            for page in batch
-        ])
-        all_extractions.extend(batch_results)
-        logger.info(f"✅ Batch complete: {len(batch_results)} pages processed")
+    # --- Step 1: Extract (per-page parallel) ---
+    all_extractions = await asyncio.gather(*[
+        extract_all_for_page(page, config)
+        for page in pages
+    ])
 
     # --- Step 2: Merge (per-page) ---
     merge_results = []
