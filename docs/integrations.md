@@ -27,6 +27,7 @@ pdf2md가 연동하는 외부 서비스 목록과 구성 방식.
 | 토큰 파라미터 | `max_tokens` | `max_tokens` / `max_completion_tokens` (모델별) |
 | System prompt | `system` 파라미터 | `messages[0].role="system"` |
 | Temperature | 항상 적용 | gpt-5는 미지원 |
+| Extended thinking | `--thinking` 플래그로 활성화 (adaptive) | 미지원 |
 
 **Settings:** `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`
 
@@ -91,8 +92,9 @@ class LLMConfig(BaseModel):
     provider: str           # "anthropic" | "openai"
     anthropic_api_key: str  # ANTHROPIC_API_KEY
     openai_api_key: str     # OPENAI_API_KEY
-    claude_model: str       # "claude-sonnet-4-20250514"
+    claude_model: str       # "claude-sonnet-4-6" (CLI: --model)
     openai_model: str       # "gpt-5-2025-08-07"
+    extended_thinking: bool # False (CLI: --thinking)
     max_tokens: int         # 16384
     max_tokens_limit: int   # 128000
     dynamic_token_adjustment: bool  # True

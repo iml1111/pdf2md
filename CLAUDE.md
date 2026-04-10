@@ -23,6 +23,14 @@ main.py (CLI + 체이닝) → usecases/ (태스크 경계) → extractors/ + pro
 - `processors/` — 모듈 레벨 함수 (llm_merger, final_orchestrator, image_converter)
 - `usecases/` — 오케스트레이션 래퍼 (설정 주입, 에러 핸들링, dataclass I/O 변환)
 
+## CLI 옵션
+
+- `--in` / `-i` — 입력 PDF 경로 (필수)
+- `--out` / `-o` — 출력 마크다운 경로
+- `--llm` — LLM 프로바이더 (`anthropic` / `openai`, 기본: `anthropic`)
+- `--model` — Claude 모델 지정 (기본: `claude-sonnet-4-6`)
+- `--thinking` — Extended thinking 활성화 (기본: OFF)
+
 ## 핵심 규칙
 
 - LLM Key가 없으면 즉시 중단하고 key 설정 요청

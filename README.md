@@ -48,7 +48,7 @@ CLOVA_OCR_SECRET=your-secret-key
 ### Basic Usage
 
 ```bash
-# Convert with default provider (Anthropic)
+# Convert with default settings (Sonnet, thinking OFF)
 python main.py --in document.pdf
 
 # Specify output path
@@ -56,6 +56,15 @@ python main.py --in document.pdf --out output.md
 
 # Use OpenAI
 python main.py --in document.pdf --llm openai
+
+# Use Opus model for higher quality
+python main.py --in document.pdf --model claude-opus-4-6
+
+# Enable extended thinking
+python main.py --in document.pdf --thinking
+
+# Opus + thinking (highest quality, highest cost)
+python main.py --in document.pdf --model claude-opus-4-6 --thinking
 ```
 
 ## Architecture
@@ -154,6 +163,8 @@ Configuration is managed via Pydantic models with environment variable defaults:
 | Config | Field | Default | Description |
 |--------|-------|---------|-------------|
 | LLM | `provider` | `anthropic` | LLM provider (`anthropic`/`openai`) |
+| LLM | `claude_model` | `claude-sonnet-4-6` | Claude model (`--model` CLI flag) |
+| LLM | `extended_thinking` | `false` | Extended thinking (`--thinking` CLI flag) |
 | LLM | `max_tokens` | `16384` | Max output tokens |
 | LLM | `temperature` | `0.1` | LLM temperature |
 | LLM | `dynamic_token_adjustment` | `true` | Auto-adjust tokens for Korean/English ratio |

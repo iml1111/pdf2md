@@ -100,13 +100,15 @@ def _call_claude(
 ) -> str:
     """Call Claude API for final generation"""
     try:
-        message = client.messages.create(
-            model=config.claude_model,
-            max_tokens=max_tokens,
-            thinking={"type": "adaptive"},
-            system=SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": prompt}],
-        )
+        kwargs = {
+            "model": config.claude_model,
+            "max_tokens": max_tokens,
+            "system": SYSTEM_PROMPT,
+            "messages": [{"role": "user", "content": prompt}],
+        }
+        if config.extended_thinking:
+            kwargs["thinking"] = {"type": "adaptive"}
+        message = client.messages.create(**kwargs)
         for block in message.content:
             if block.type == "text":
                 return block.text

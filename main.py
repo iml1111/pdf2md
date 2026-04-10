@@ -146,6 +146,14 @@ def parse_args():
         '--llm', type=str, choices=['openai', 'anthropic'], default='anthropic',
         help='LLM provider to use',
     )
+    parser.add_argument(
+        '--model', type=str, default=None,
+        help='Claude model to use (e.g. claude-sonnet-4-6, claude-opus-4-6)',
+    )
+    parser.add_argument(
+        '--thinking', action='store_true', default=False,
+        help='Enable extended thinking (adaptive mode)',
+    )
     return parser.parse_args()
 
 
@@ -155,7 +163,10 @@ def main():
     setup_logger(level="INFO")
     config = get_config()
     config.llm.provider = args.llm
-    logger.info(f"✅ Using {config.llm.provider} as LLM provider")
+    if args.model:
+        config.llm.claude_model = args.model
+    config.llm.extended_thinking = args.thinking
+    logger.info(f"✅ Using {config.llm.provider} as LLM provider (model: {config.llm.claude_model}, thinking: {config.llm.extended_thinking})")
 
     # Validate credentials
     try:

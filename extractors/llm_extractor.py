@@ -27,22 +27,25 @@ class LLMExtractor:
         self.anthropic_client = Anthropic(api_key=self.config.llm.anthropic_api_key)
         self.openai_client = OpenAI(api_key=self.config.llm.openai_api_key)
 
-    def _resize_image_if_needed(self, image_bytes: bytes, max_dimension: int = 7999) -> bytes:
-        """Resize image if it exceeds the maximum dimension (default 7999px for Claude API)"""
+    def _resize_image_if_needed(self, image_bytes: bytes, max_dimension: int = 7999, max_bytes: int = 5 * 1024 * 1024 * 3 // 4) -> bytes:
+        """Resize image if it exceeds the maximum dimension (default 7999px) or file size (default ~3.75MB raw, which stays under 5MB after base64 encoding)"""
         try:
             img = Image.open(io.BytesIO(image_bytes))
             width, height = img.size
 
             if max(width, height) > max_dimension:
                 scale = max_dimension / max(width, height)
-                new_width = int(width * scale)
-                new_height = int(height * scale)
-
-                img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
-
+                img = img.resize((int(width * scale), int(height * scale)), Image.Resampling.LANCZOS)
                 output = io.BytesIO()
                 img.save(output, format='PNG', optimize=True)
-                return output.getvalue()
+                image_bytes = output.getvalue()
+
+            while len(image_bytes) > max_bytes:
+                width, height = img.size
+                img = img.resize((int(width * 0.9), int(height * 0.9)), Image.Resampling.LANCZOS)
+                output = io.BytesIO()
+                img.save(output, format='PNG', optimize=True)
+                image_bytes = output.getvalue()
 
             return image_bytes
 
@@ -60,13 +63,10 @@ class LLMExtractor:
     def _call_claude_image(self, img_base64: str, prompt: str) -> Dict[str, Any]:
         """Call Claude API for image analysis"""
         try:
-            message = self.anthropic_client.messages.create(
-                model=self.config.llm.claude_model,
-                max_tokens=self.config.llm.max_tokens,
-                thinking={
-                    "type": "adaptive",
-                },
-                messages=[{
+            kwargs = {
+                "model": self.config.llm.claude_model,
+                "max_tokens": self.config.llm.max_tokens,
+                "messages": [{
                     "role": "user",
                     "content": [
                         {
@@ -83,7 +83,10 @@ class LLMExtractor:
                         }
                     ]
                 }]
-            )
+            }
+            if self.config.llm.extended_thinking:
+                kwargs["thinking"] = {"type": "adaptive"}
+            message = self.anthropic_client.messages.create(**kwargs)
 
             response_text = ""
             for block in message.content:

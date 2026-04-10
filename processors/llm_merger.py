@@ -36,12 +36,16 @@ async def call_llm_for_merge(
     """Call LLM API for merging"""
     try:
         if config.provider == "anthropic":
+            kwargs = {
+                "model": config.claude_model,
+                "max_tokens": 8192,
+                "messages": [{"role": "user", "content": prompt}],
+            }
+            if config.extended_thinking:
+                kwargs["thinking"] = {"type": "adaptive"}
             response = await asyncio.to_thread(
                 anthropic_client.messages.create,
-                model=config.claude_model,
-                max_tokens=8192,
-                thinking={"type": "adaptive"},
-                messages=[{"role": "user", "content": prompt}],
+                **kwargs,
             )
             for block in response.content:
                 if block.type == "text":
