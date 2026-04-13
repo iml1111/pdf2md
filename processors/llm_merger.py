@@ -37,7 +37,7 @@ async def call_llm_for_merge(
     try:
         if config.provider == "anthropic":
             kwargs = {
-                "model": config.claude_model,
+                "model": config.model,
                 "max_tokens": 8192,
                 "messages": [{"role": "user", "content": prompt}],
             }
@@ -49,24 +49,25 @@ async def call_llm_for_merge(
             )
             for block in response.content:
                 if block.type == "text":
-                    return block.text
+                    return block.text or ""
             return ""
 
         elif config.provider == "openai":
             completion_params = {
-                "model": config.openai_model,
+                "model": config.model,
                 "messages": [{"role": "user", "content": prompt}],
             }
-            if "gpt-5" in config.openai_model.lower():
-                completion_params["reasoning_effort"] = "high"
+            if "gpt-5" in config.model.lower():
+                completion_params["max_completion_tokens"] = 8192
             else:
+                completion_params["max_tokens"] = 8192
                 completion_params["temperature"] = 0.1
 
             response = await asyncio.to_thread(
                 openai_client.chat.completions.create,
                 **completion_params,
             )
-            return response.choices[0].message.content
+            return response.choices[0].message.content or ""
 
     except Exception as e:
         logger.error(f"LLM merge failed: {e}")

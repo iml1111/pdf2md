@@ -55,7 +55,7 @@ python main.py --in document.pdf
 python main.py --in document.pdf --out output.md
 
 # Use OpenAI
-python main.py --in document.pdf --llm openai
+python main.py --in document.pdf --model gpt-5.4
 
 # Use Opus model for higher quality
 python main.py --in document.pdf --model claude-opus-4-6
@@ -162,8 +162,7 @@ Configuration is managed via Pydantic models with environment variable defaults:
 
 | Config | Field | Default | Description |
 |--------|-------|---------|-------------|
-| LLM | `provider` | `anthropic` | LLM provider (`anthropic`/`openai`) |
-| LLM | `claude_model` | `claude-sonnet-4-6` | Claude model (`--model` CLI flag) |
+| LLM | `model` | `claude-sonnet-4-6` | LLM model (`--model` CLI flag, provider auto-inferred) |
 | LLM | `extended_thinking` | `false` | Extended thinking (`--thinking` CLI flag) |
 | LLM | `max_tokens` | `16384` | Max output tokens |
 | LLM | `temperature` | `0.1` | LLM temperature |

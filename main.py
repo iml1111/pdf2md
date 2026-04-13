@@ -143,12 +143,8 @@ def parse_args():
         help='Output markdown file path (default: same as input with .md extension)',
     )
     parser.add_argument(
-        '--llm', type=str, choices=['openai', 'anthropic'], default='anthropic',
-        help='LLM provider to use',
-    )
-    parser.add_argument(
         '--model', type=str, default=None,
-        help='Claude model to use (e.g. claude-sonnet-4-6, claude-opus-4-6)',
+        help='LLM model (e.g. claude-sonnet-4-6, gpt-5.4, gpt-5.4-mini). Provider is inferred from model name.',
     )
     parser.add_argument(
         '--thinking', action='store_true', default=False,
@@ -162,11 +158,15 @@ def main():
     args = parse_args()
     setup_logger(level="INFO")
     config = get_config()
-    config.llm.provider = args.llm
     if args.model:
-        config.llm.claude_model = args.model
+        config.llm.model = args.model
     config.llm.extended_thinking = args.thinking
-    logger.info(f"✅ Using {config.llm.provider} as LLM provider (model: {config.llm.claude_model}, thinking: {config.llm.extended_thinking})")
+    try:
+        provider = config.llm.provider
+    except ValueError as e:
+        print(f"\n❌ {e}", file=sys.stderr)
+        return 1
+    logger.info(f"✅ Using {provider} provider (model: {config.llm.model}, thinking: {config.llm.extended_thinking})")
 
     # Validate credentials
     try:

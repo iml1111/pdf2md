@@ -89,11 +89,9 @@ Body (multipart):
 
 ```python
 class LLMConfig(BaseModel):
-    provider: str           # "anthropic" | "openai"
+    model: str              # "claude-sonnet-4-6" (CLI: --model, provider auto-inferred)
     anthropic_api_key: str  # ANTHROPIC_API_KEY
     openai_api_key: str     # OPENAI_API_KEY
-    claude_model: str       # "claude-sonnet-4-6" (CLI: --model)
-    openai_model: str       # "gpt-5-2025-08-07"
     extended_thinking: bool # False (CLI: --thinking)
     max_tokens: int         # 16384
     max_tokens_limit: int   # 128000

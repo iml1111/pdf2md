@@ -64,7 +64,7 @@ class LLMExtractor:
         """Call Claude API for image analysis"""
         try:
             kwargs = {
-                "model": self.config.llm.claude_model,
+                "model": self.config.llm.model,
                 "max_tokens": self.config.llm.max_tokens,
                 "messages": [{
                     "role": "user",
@@ -94,7 +94,7 @@ class LLMExtractor:
                     response_text = block.text
                     break
             result = self._parse_llm_response(response_text)
-            result['llm_model'] = self.config.llm.claude_model
+            result['llm_model'] = self.config.llm.model
             result['llm_provider'] = 'Claude (Anthropic)'
             return result
 
@@ -106,7 +106,7 @@ class LLMExtractor:
         """Call OpenAI API for image analysis"""
         try:
             completion_params = {
-                "model": self.config.llm.openai_model,
+                "model": self.config.llm.model,
                 "messages": [{
                     "role": "user",
                     "content": [
@@ -124,18 +124,17 @@ class LLMExtractor:
                 }]
             }
 
-            if "gpt-5" in self.config.llm.openai_model.lower():
+            if "gpt-5" in self.config.llm.model.lower():
                 completion_params["max_completion_tokens"] = self.config.llm.max_tokens
-                completion_params["reasoning_effort"] = "high"
             else:
                 completion_params["max_tokens"] = self.config.llm.max_tokens
                 completion_params["temperature"] = self.config.llm.temperature
 
             response = self.openai_client.chat.completions.create(**completion_params)
 
-            response_text = response.choices[0].message.content if response.choices else ""
+            response_text = (response.choices[0].message.content or "") if response.choices else ""
             result = self._parse_llm_response(response_text)
-            result['llm_model'] = self.config.llm.openai_model
+            result['llm_model'] = self.config.llm.model
             result['llm_provider'] = 'OpenAI'
             return result
 

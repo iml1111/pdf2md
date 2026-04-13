@@ -46,7 +46,7 @@ pdf2md/
 
 | 파일 | 역할 |
 |------|------|
-| `main.py` | CLI 진입점 + 유스케이스 절차적 체이닝 (`--in`, `--out`, `--llm`, `--model`, `--thinking`) |
+| `main.py` | CLI 진입점 + 유스케이스 절차적 체이닝 (`--in`, `--out`, `--model`, `--thinking`) |
 | `prompts.py` | 모든 LLM 프롬프트 및 포맷팅 함수 |
 | `utils/config.py` | 환경변수 → Pydantic Config 로딩 |
 | `usecases/models.py` | I/O 데이터클래스 (PageInput, ExtractionResult, MergeInput 등) |

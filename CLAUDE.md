@@ -27,8 +27,7 @@ main.py (CLI + 체이닝) → usecases/ (태스크 경계) → extractors/ + pro
 
 - `--in` / `-i` — 입력 PDF 경로 (필수)
 - `--out` / `-o` — 출력 마크다운 경로
-- `--llm` — LLM 프로바이더 (`anthropic` / `openai`, 기본: `anthropic`)
-- `--model` — Claude 모델 지정 (기본: `claude-sonnet-4-6`)
+- `--model` — LLM 모델 지정 (기본: `claude-sonnet-4-6`, provider는 모델명에서 자동 추론)
 - `--thinking` — Extended thinking 활성화 (기본: OFF)
 
 ## 핵심 규칙

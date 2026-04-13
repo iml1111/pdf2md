@@ -10,18 +10,33 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+def infer_provider(model_name: str) -> str:
+    """Infer LLM provider from model name prefix."""
+    name = model_name.lower()
+    if name.startswith("claude"):
+        return "anthropic"
+    if name.startswith(("gpt", "o1", "o3", "o4")):
+        return "openai"
+    raise ValueError(
+        f"Cannot infer provider from model name '{model_name}'. "
+        f"Model must start with 'claude' (Anthropic) or 'gpt'/'o1'/'o3'/'o4' (OpenAI)."
+    )
+
+
 class LLMConfig(BaseModel):
     """LLM provider configuration"""
-    provider: str = Field(default="anthropic", pattern="^(anthropic|openai)$")
+    model: str = Field(default="claude-sonnet-4-6")
     anthropic_api_key: str = Field(default_factory=lambda: os.environ.get("ANTHROPIC_API_KEY", ""))
     openai_api_key: str = Field(default_factory=lambda: os.environ.get("OPENAI_API_KEY", ""))
-    claude_model: str = Field(default="claude-sonnet-4-6")
-    openai_model: str = Field(default="gpt-5.4")
     extended_thinking: bool = Field(default=False)
     max_tokens: int = Field(default=16384)
     max_tokens_limit: int = Field(default=128000)
     dynamic_token_adjustment: bool = Field(default=True)
     temperature: float = Field(default=0.1)
+
+    @property
+    def provider(self) -> str:
+        return infer_provider(self.model)
 
     def validate_credentials(self) -> None:
         """Validate that LLM API keys are configured. Raises ValueError if missing."""

@@ -101,7 +101,7 @@ def _call_claude(
     """Call Claude API for final generation"""
     try:
         kwargs = {
-            "model": config.claude_model,
+            "model": config.model,
             "max_tokens": max_tokens,
             "system": SYSTEM_PROMPT,
             "messages": [{"role": "user", "content": prompt}],
@@ -127,21 +127,20 @@ def _call_openai(
     """Call OpenAI API for final generation"""
     try:
         completion_params = {
-            "model": config.openai_model,
+            "model": config.model,
             "messages": [
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": prompt},
             ],
         }
-        if "gpt-5" in config.openai_model.lower():
+        if "gpt-5" in config.model.lower():
             completion_params["max_completion_tokens"] = max_tokens
-            completion_params["reasoning_effort"] = "high"
         else:
             completion_params["max_tokens"] = max_tokens
             completion_params["temperature"] = 0.3
 
         response = client.chat.completions.create(**completion_params)
-        return response.choices[0].message.content if response.choices else ""
+        return (response.choices[0].message.content or "") if response.choices else ""
     except Exception as e:
         logger.error(f"OpenAI API call failed: {e}")
         raise
